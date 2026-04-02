@@ -11,14 +11,16 @@ TOTAL_PASSES=0
 TOTAL_FAILURES=0
 SUITE_FAILURES=0
 
-if command -v go >/dev/null 2>&1; then
-  GO_CMD="go"
-elif command -v go.exe >/dev/null 2>&1; then
-  GO_CMD="go.exe"
-else
-  echo "ERROR: Go toolchain not found in PATH (go/go.exe)."
-  exit 127
+# Build the tester image from the tester stage in the Dockerfile.
+# This ensures tests run with the same Go version used to build the app.
+echo "Building test image..."
+TESTER_IMAGE="clinic-test-runner"
+if ! docker build --target tester -t "${TESTER_IMAGE}" -q "${ROOT_DIR}" > /dev/null 2>&1; then
+  echo "ERROR: Failed to build test image. Attempting verbose build..."
+  docker build --target tester -t "${TESTER_IMAGE}" "${ROOT_DIR}"
+  exit 1
 fi
+echo "Test image ready."
 
 run_suite() {
   local suite_name="$1"
@@ -31,7 +33,7 @@ run_suite() {
   echo "Log: ${log_file}"
   echo "============================================================"
 
-  if "${GO_CMD}" test -v "${pkg_pattern}" 2>&1 | tee "${log_file}"; then
+  if docker run --rm "${TESTER_IMAGE}" "${pkg_pattern}" 2>&1 | tee "${log_file}"; then
     suite_exit=0
   else
     suite_exit=$?

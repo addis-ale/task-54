@@ -10,6 +10,10 @@ COPY . .
 RUN CGO_ENABLED=1 go build -o /bin/server ./cmd/server
 RUN CGO_ENABLED=1 go build -o /bin/seed   ./cmd/seed
 
+FROM builder AS tester
+ENV CGO_ENABLED=1
+ENTRYPOINT ["go", "test", "-v"]
+
 FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata
