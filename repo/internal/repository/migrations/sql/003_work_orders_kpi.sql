@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS work_orders (
     service_type TEXT NOT NULL,
     priority TEXT NOT NULL DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
     created_at INTEGER NOT NULL,
+    scheduled_at INTEGER,
     started_at INTEGER,
     completed_at INTEGER,
     status TEXT NOT NULL CHECK(status IN ('queued', 'in_progress', 'completed')),

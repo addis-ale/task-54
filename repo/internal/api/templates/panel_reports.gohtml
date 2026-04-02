@@ -1,0 +1,89 @@
+<section class="view active">
+  <div class="grid two">
+    <article class="card">
+      <h3>Audit Search</h3>
+      <form class="stack-form" hx-get="/ui/reports/audit-results" hx-target="#audit-results">
+        <label>Resident ID<input name="resident_id"></label>
+        <label>Record Type<input name="record_type"></label>
+        <label>From (YYYY-MM-DD)<input name="from" type="date"></label>
+        <label>To (YYYY-MM-DD)<input name="to" type="date"></label>
+        <button type="submit">Search</button>
+      </form>
+      <div id="audit-results" class="stack mt-8">
+        {{if not .AuditRows}}
+          <p class="hint">No audit records found.</p>
+        {{else}}
+          {{range .AuditRows}}
+            <div class="exercise-row">
+              <div>
+                <strong>{{.ResourceType}} #{{.ResourceID}}</strong>
+                <div>{{.OperatorName}} ({{.LocalIP}})</div>
+              </div>
+              <div class="hint">{{.OccurredAt.Format "2006-01-02 15:04:05"}}</div>
+            </div>
+          {{end}}
+        {{end}}
+      </div>
+      <div class="row mt-4">
+        <a href="/api/v1/reports/audit/export?format=csv" class="button">Audit CSV</a>
+        <a href="/api/v1/reports/audit/export?format=xlsx" class="button">Audit XLSX</a>
+      </div>
+    </article>
+
+    <article class="card">
+      <h3>Schedule Local Reports</h3>
+      <form class="stack-form" hx-post="/ui/reports/schedules" hx-target="#panel">
+        <label>Report Type
+          <select name="report_type">
+            <option value="audit">audit</option>
+            <option value="finance">finance</option>
+          </select>
+        </label>
+        <label>Format
+          <select name="format">
+            <option>csv</option>
+            <option>xlsx</option>
+          </select>
+        </label>
+        <label>Shared Folder<input name="shared_folder_path" placeholder="{{.ReportsSharedRoot}}"></label>
+        <label>Interval Minutes<input type="number" name="interval_minutes" value="60"></label>
+        <label>First Run At<input type="datetime-local" name="first_run_at"></label>
+        <button type="submit">Save Schedule</button>
+      </form>
+      <button hx-post="/ui/reports/schedules/run-now" hx-target="#panel" class="mt-4">Run Schedules Now</button>
+      
+      <div class="stack mt-8">
+        <h4>Active Schedules</h4>
+        {{range .Schedules}}
+          <div class="exercise-row">
+            <div>
+              <strong>{{.ReportType}} ({{.Format}})</strong>
+              <div class="hint">Path: {{.SharedFolderPath}}</div>
+            </div>
+            <div class="hint">Next: {{.NextRunAt.Format "15:04 01/02"}}</div>
+          </div>
+        {{end}}
+      </div>
+    </article>
+  </div>
+
+  <article class="card">
+    <h3>Config Versioning and Rollback</h3>
+    <form class="stack-form" hx-post="/ui/config/versions" hx-target="#panel">
+      <label>Config Key<input name="config_key" value="reporting"></label>
+      <label>Payload JSON<textarea name="payload_json" rows="4">{"shared_root":"{{.ReportsSharedRoot}}"}</textarea></label>
+      <button type="submit">Create Version</button>
+    </form>
+    <div class="stack mt-8">
+      {{range .ConfigVersions}}
+        <div class="exercise-row">
+          <div>
+            <strong>Version #{{.ID}}</strong>
+            <div>{{.ConfigKey}} | Active: {{if .IsActive}}<span class="tag success">Yes</span>{{else}}<span class="tag">No</span>{{end}}</div>
+          </div>
+          <button hx-post="/ui/config/versions/{{.ID}}/rollback" hx-target="#panel">Rollback</button>
+        </div>
+      {{end}}
+    </div>
+  </article>
+</section>

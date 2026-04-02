@@ -20,6 +20,7 @@ type WorkOrder struct {
 	ServiceType string     `json:"service_type"`
 	Priority    string     `json:"priority"`
 	CreatedAt   time.Time  `json:"created_at"`
+	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 	Status      string     `json:"status"`

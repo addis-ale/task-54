@@ -21,7 +21,7 @@ func NewWorkOrderRepository(db *sql.DB) *WorkOrderRepository {
 
 func (r *WorkOrderRepository) List(ctx context.Context, filter repository.WorkOrderFilter) ([]domain.WorkOrder, error) {
 	query := `
-SELECT id, service_type, priority, created_at, started_at, completed_at, status, assignee_id, version
+SELECT id, service_type, priority, created_at, scheduled_at, started_at, completed_at, status, assignee_id, version
 FROM work_orders
 WHERE 1=1`
 	args := make([]any, 0, 4)
@@ -77,7 +77,7 @@ func (r *WorkOrderRepository) GetByIDTx(ctx context.Context, tx *sql.Tx, id int6
 
 func (r *WorkOrderRepository) getByID(ctx context.Context, runner queryRowRunner, id int64) (*domain.WorkOrder, error) {
 	const q = `
-SELECT id, service_type, priority, created_at, started_at, completed_at, status, assignee_id, version
+SELECT id, service_type, priority, created_at, scheduled_at, started_at, completed_at, status, assignee_id, version
 FROM work_orders
 WHERE id = ?`
 
@@ -94,8 +94,8 @@ WHERE id = ?`
 
 func (r *WorkOrderRepository) Create(ctx context.Context, workOrder *domain.WorkOrder) error {
 	const q = `
-INSERT INTO work_orders(service_type, priority, created_at, started_at, completed_at, status, assignee_id, version)
-VALUES(?, ?, ?, ?, ?, ?, ?, 1)`
+INSERT INTO work_orders(service_type, priority, created_at, scheduled_at, started_at, completed_at, status, assignee_id, version)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, 1)`
 
 	now := time.Now().UTC()
 	workOrder.CreatedAt = now
@@ -115,7 +115,15 @@ VALUES(?, ?, ?, ?, ?, ?, ?, 1)`
 		assigneeID = sql.NullInt64{Int64: *workOrder.AssigneeID, Valid: true}
 	}
 
-	result, err := r.db.ExecContext(ctx, q, workOrder.ServiceType, workOrder.Priority, workOrder.CreatedAt.Unix(), startedAt, completedAt, workOrder.Status, assigneeID)
+	var scheduledAt sql.NullInt64
+	if workOrder.ScheduledAt != nil {
+		scheduledAt = sql.NullInt64{Int64: workOrder.ScheduledAt.UTC().Unix(), Valid: true}
+	} else {
+		// Default to CreatedAt if not specified
+		scheduledAt = sql.NullInt64{Int64: workOrder.CreatedAt.Unix(), Valid: true}
+	}
+
+	result, err := r.db.ExecContext(ctx, q, workOrder.ServiceType, workOrder.Priority, workOrder.CreatedAt.Unix(), scheduledAt, startedAt, completedAt, workOrder.Status, assigneeID)
 	if err != nil {
 		return fmt.Errorf("create work order: %w", err)
 	}
@@ -182,7 +190,7 @@ SELECT
     service_type,
     COUNT(1) AS total,
     SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) AS completed,
-    SUM(CASE WHEN completed_at IS NOT NULL AND (completed_at - started_at) <= 900 THEN 1 ELSE 0 END) AS on_time_15m
+    SUM(CASE WHEN started_at IS NOT NULL AND started_at <= (scheduled_at + 900) THEN 1 ELSE 0 END) AS on_time_15m
 FROM work_orders
 WHERE started_at IS NOT NULL AND started_at >= ? AND started_at < ?
 GROUP BY service_type`
@@ -215,6 +223,7 @@ func scanWorkOrder(scanner rowScanner) (*domain.WorkOrder, error) {
 	var (
 		item        domain.WorkOrder
 		createdAt   int64
+		scheduledAt sql.NullInt64
 		startedAt   sql.NullInt64
 		completedAt sql.NullInt64
 		assigneeID  sql.NullInt64
@@ -225,6 +234,7 @@ func scanWorkOrder(scanner rowScanner) (*domain.WorkOrder, error) {
 		&item.ServiceType,
 		&item.Priority,
 		&createdAt,
+		&scheduledAt,
 		&startedAt,
 		&completedAt,
 		&item.Status,
@@ -236,6 +246,10 @@ func scanWorkOrder(scanner rowScanner) (*domain.WorkOrder, error) {
 	}
 
 	item.CreatedAt = time.Unix(createdAt, 0).UTC()
+	if scheduledAt.Valid {
+		t := time.Unix(scheduledAt.Int64, 0).UTC()
+		item.ScheduledAt = &t
+	}
 	if startedAt.Valid {
 		t := time.Unix(startedAt.Int64, 0).UTC()
 		item.StartedAt = &t

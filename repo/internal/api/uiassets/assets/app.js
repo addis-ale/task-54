@@ -13,6 +13,113 @@
     activityLog: document.getElementById("activity-log"),
   };
 
+  class ClinicCache {
+    constructor() {
+      this.dbName = 'clinic_lru_cache';
+      this.storeName = 'cache_items';
+      this.version = 1;
+      this.maxBytes = 2 * 1024 * 1024 * 1024; // 2GB
+      this.maxItems = 200;
+      this.db = null;
+    }
+
+    async open() {
+      if (this.db) return this.db;
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(this.dbName, this.version);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(this.storeName)) {
+            const store = db.createObjectStore(this.storeName, { keyPath: 'key' });
+            store.createIndex('last_accessed_at', 'last_accessed_at', { unique: false });
+          }
+        };
+        request.onsuccess = (e) => {
+          this.db = e.target.result;
+          resolve(this.db);
+        };
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    async put(key, sizeBytes, hash, data) {
+      const db = await this.open();
+      const item = {
+        key: String(key).trim(),
+        size_bytes: Math.max(0, Number(sizeBytes)),
+        content_hash: String(hash).trim(),
+        data: data || null,
+        created_at: new Date().toISOString(),
+        last_accessed_at: new Date().toISOString()
+      };
+      
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(this.storeName, 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        store.put(item);
+        tx.oncomplete = () => {
+          this.evict().then(resolve);
+        };
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async get(key) {
+      const db = await this.open();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(this.storeName, 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        const request = store.get(key);
+        request.onsuccess = () => {
+          const item = request.result;
+          if (!item) {
+            resolve(null);
+            return;
+          }
+          item.last_accessed_at = new Date().toISOString();
+          store.put(item);
+          resolve(item);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async evict() {
+      const db = await this.open();
+      const tx = db.transaction(this.storeName, 'readwrite');
+      const store = tx.objectStore(this.storeName);
+      const items = await new Promise(r => {
+        const req = store.getAll();
+        req.onsuccess = () => r(req.result || []);
+      });
+
+      let totalBytes = items.reduce((sum, i) => sum + (i.size_bytes || 0), 0);
+      if (items.length <= this.maxItems && totalBytes <= this.maxBytes) return;
+
+      items.sort((a, b) => new Date(a.last_accessed_at).getTime() - new Date(b.last_accessed_at).getTime());
+
+      while (items.length > this.maxItems || totalBytes > this.maxBytes) {
+        const victim = items.shift();
+        if (!victim) break;
+        totalBytes -= (victim.size_bytes || 0);
+        store.delete(victim.key);
+      }
+    }
+
+    async clearAll() {
+      const db = await this.open();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(this.storeName, 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        store.clear();
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+  }
+
+  window.clinicCache = new ClinicCache();
+
   function loadJSON(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
@@ -75,19 +182,14 @@
   }
 
   function clearClinicLocalStorage() {
-    Object.keys(localStorage)
-      .filter(function (k) {
-        return k.startsWith("clinic:");
-      })
-      .forEach(function (k) {
-        localStorage.removeItem(k);
-      });
+    localStorage.clear();
   }
 
   function setSignedOut() {
     state.user = null;
     state.permissions = [];
     clearClinicLocalStorage();
+    if (window.clinicCache) window.clinicCache.clearAll().catch(console.error);
     el.loginPanel.classList.remove("hidden");
     el.appPanel.classList.add("hidden");
     el.sessionChip.textContent = "Signed out";
