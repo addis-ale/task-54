@@ -1,0 +1,263 @@
+package service
+
+import (
+	"archive/zip"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"time"
+)
+
+type DiagnosticsService struct {
+	db                *sql.DB
+	structuredLogPath string
+	outputRoot        string
+}
+
+func NewDiagnosticsService(db *sql.DB, structuredLogPath, outputRoot string) *DiagnosticsService {
+	return &DiagnosticsService{
+		db:                db,
+		structuredLogPath: structuredLogPath,
+		outputRoot:        outputRoot,
+	}
+}
+
+type DiagnosticsExport struct {
+	ExportID   string
+	BundlePath string
+	FileName   string
+}
+
+func (s *DiagnosticsService) Export(ctx context.Context) (*DiagnosticsExport, error) {
+	if s.outputRoot == "" {
+		s.outputRoot = filepath.Join(".", "data", "diagnostics")
+	}
+
+	if err := os.MkdirAll(s.outputRoot, 0o755); err != nil {
+		return nil, fmt.Errorf("create diagnostics output directory: %w", err)
+	}
+
+	exportID := fmt.Sprintf("diag_%d", time.Now().UTC().UnixNano())
+	fileName := exportID + ".zip"
+	bundlePath := filepath.Join(s.outputRoot, fileName)
+
+	outFile, err := os.Create(bundlePath)
+	if err != nil {
+		return nil, fmt.Errorf("create diagnostics bundle file: %w", err)
+	}
+	defer outFile.Close()
+
+	zipWriter := zip.NewWriter(outFile)
+
+	if err := s.addStructuredLogs(zipWriter); err != nil {
+		zipWriter.Close()
+		return nil, err
+	}
+
+	if err := s.addSchemaVersions(ctx, zipWriter); err != nil {
+		zipWriter.Close()
+		return nil, err
+	}
+
+	if err := s.addHealthSnapshot(ctx, zipWriter); err != nil {
+		zipWriter.Close()
+		return nil, err
+	}
+
+	if err := zipWriter.Close(); err != nil {
+		return nil, fmt.Errorf("finalize diagnostics zip: %w", err)
+	}
+
+	return &DiagnosticsExport{
+		ExportID:   exportID,
+		BundlePath: bundlePath,
+		FileName:   fileName,
+	}, nil
+}
+
+func (s *DiagnosticsService) addStructuredLogs(zipWriter *zip.Writer) error {
+	entry, err := zipWriter.Create("logs/structured.log")
+	if err != nil {
+		return fmt.Errorf("create log entry in diagnostics bundle: %w", err)
+	}
+
+	if s.structuredLogPath == "" {
+		_, err = entry.Write([]byte("{\"message\":\"structured log path not configured\"}\n"))
+		return err
+	}
+
+	logFile, err := os.Open(s.structuredLogPath)
+	if err != nil {
+		_, writeErr := entry.Write([]byte(fmt.Sprintf("{\"message\":\"structured log unavailable\",\"error\":%q}\n", err.Error())))
+		if writeErr != nil {
+			return fmt.Errorf("write fallback structured log entry: %w", writeErr)
+		}
+		return nil
+	}
+	defer logFile.Close()
+
+	if _, err := io.Copy(entry, logFile); err != nil {
+		return fmt.Errorf("copy structured logs to diagnostics bundle: %w", err)
+	}
+
+	return nil
+}
+
+func (s *DiagnosticsService) addSchemaVersions(ctx context.Context, zipWriter *zip.Writer) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT name, applied_at FROM schema_migrations ORDER BY name ASC`)
+	if err != nil {
+		return fmt.Errorf("query schema migrations: %w", err)
+	}
+	defer rows.Close()
+
+	type row struct {
+		Name      string `json:"name"`
+		AppliedAt int64  `json:"applied_at"`
+	}
+	items := make([]row, 0)
+	for rows.Next() {
+		var item row
+		if err := rows.Scan(&item.Name, &item.AppliedAt); err != nil {
+			return fmt.Errorf("scan schema migration row: %w", err)
+		}
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate schema migration rows: %w", err)
+	}
+
+	entry, err := zipWriter.Create("schema/migrations.json")
+	if err != nil {
+		return fmt.Errorf("create schema entry in diagnostics bundle: %w", err)
+	}
+
+	raw, err := json.MarshalIndent(map[string]any{"migrations": items}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal schema migration payload: %w", err)
+	}
+
+	if _, err := entry.Write(raw); err != nil {
+		return fmt.Errorf("write schema payload to diagnostics bundle: %w", err)
+	}
+
+	return nil
+}
+
+func (s *DiagnosticsService) addHealthSnapshot(ctx context.Context, zipWriter *zip.Writer) error {
+	health := map[string]any{
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if err := s.db.PingContext(ctx); err != nil {
+		health["db_status"] = "down"
+		health["db_error"] = err.Error()
+	} else {
+		health["db_status"] = "up"
+	}
+
+	tableCounts := make(map[string]int64)
+	for _, table := range []string{"users", "audit_events", "job_runs", "payments", "settlements", "exam_schedules"} {
+		var count int64
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM `+table).Scan(&count); err == nil {
+			tableCounts[table] = count
+		}
+	}
+
+	keys := make([]string, 0, len(tableCounts))
+	for k := range tableCounts {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	sortedCounts := make(map[string]int64, len(keys))
+	for _, k := range keys {
+		sortedCounts[k] = tableCounts[k]
+	}
+	health["table_counts"] = sortedCounts
+
+	auditChain, err := s.verifyAuditChain(ctx)
+	if err != nil {
+		health["audit_chain"] = map[string]any{"status": "error", "error": err.Error()}
+	} else {
+		health["audit_chain"] = auditChain
+	}
+
+	entry, err := zipWriter.Create("health/snapshot.json")
+	if err != nil {
+		return fmt.Errorf("create health entry in diagnostics bundle: %w", err)
+	}
+
+	raw, err := json.MarshalIndent(health, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal health snapshot payload: %w", err)
+	}
+
+	if _, err := entry.Write(raw); err != nil {
+		return fmt.Errorf("write health snapshot payload: %w", err)
+	}
+
+	return nil
+}
+
+func (s *DiagnosticsService) verifyAuditChain(ctx context.Context) (map[string]any, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, hash_prev, hash_self FROM audit_events ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query audit chain rows: %w", err)
+	}
+	defer rows.Close()
+
+	var (
+		count      int64
+		previous   *string
+		brokenAtID *int64
+	)
+
+	for rows.Next() {
+		var (
+			id       int64
+			hashPrev sql.NullString
+			hashSelf string
+		)
+		if err := rows.Scan(&id, &hashPrev, &hashSelf); err != nil {
+			return nil, fmt.Errorf("scan audit chain row: %w", err)
+		}
+		count++
+
+		if previous == nil {
+			if hashPrev.Valid {
+				brokenAtID = &id
+				break
+			}
+		} else {
+			if !hashPrev.Valid || hashPrev.String != *previous {
+				brokenAtID = &id
+				break
+			}
+		}
+
+		prev := hashSelf
+		previous = &prev
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate audit chain rows: %w", err)
+	}
+
+	if brokenAtID != nil {
+		return map[string]any{
+			"status":       "broken",
+			"record_count": count,
+			"broken_at_id": *brokenAtID,
+		}, nil
+	}
+
+	return map[string]any{
+		"status":       "ok",
+		"record_count": count,
+	}, nil
+}

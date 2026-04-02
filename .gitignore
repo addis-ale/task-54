@@ -1,0 +1,102 @@
+# =========================
+# CareOps Clinic Administration Suite
+# Go / Fiber / SQLite / HTMX
+# =========================
+
+# ---- Binaries & Build Artifacts ----
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+/bin/
+/build/
+/dist/
+
+# ---- Go Specific ----
+/vendor/
+go.work
+go.work.sum
+
+# ---- SQLite Database Files ----
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+
+# ---- Data & Uploads ----
+/data/uploads/
+/data/media/
+/data/exports/
+/data/reports/
+/data/backups/
+/data/diagnostics/
+
+# ---- Encryption Keys ----
+*.key
+*.pem
+/keys/
+/secrets/
+
+# ---- Logs ----
+*.log
+/logs/
+
+# ---- Test Artifacts ----
+/test_reports/
+/coverage/
+*.coverprofile
+coverage.out
+coverage.html
+
+# ---- Temporary Files ----
+/.temp/
+/tmp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# ---- IDE & Editor ----
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+
+# ---- OS Generated ----
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Environment & Config Overrides ----
+.env
+.env.local
+.env.*.local
+config.local.yaml
+config.local.json
+
+# ---- Node (if HTMX tooling used) ----
+node_modules/
+package-lock.json
+yarn.lock
+
+# ---- Diagnostic Packages ----
+diagnostics_*.zip
+
+# ---- Claude / AI Agent ----
+.claude/
+/convert_ai_session.py
+/session-1.json
+/session-2.jsonl
+/sessions/

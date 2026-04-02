@@ -1,0 +1,1 @@
+<section class="view active"><article class="card"><h3>Occupancy Board</h3><div class="stack">{{if not .Items}}<p class="hint">No occupancy records found.</p>{{end}}{{range .Items}}<div class="exercise-row"><div><strong>{{.WardName}} / {{.BedCode}}</strong><div>{{.Status}}</div></div><div>{{with .PatientName}}{{.}}{{end}}</div></div>{{end}}</div></article></section>
