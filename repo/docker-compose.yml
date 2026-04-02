@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      APP_ADDR: ":8080"
+      APP_DB_PATH: "/data/clinic.db"
+      APP_MEDIA_ROOT: "/data/media"
+      APP_STRUCTURED_LOG_PATH: "/data/logs/structured.log"
+      APP_DIAGNOSTICS_ROOT: "/data/diagnostics"
+      APP_REPORTS_SHARED_ROOT: "/data/shared_reports"
+      SESSION_COOKIE_SECURE: "false"
+    volumes:
+      - clinic_data:/data
+      - clinic_media:/data/media
+      - clinic_logs:/data/logs
+      - clinic_diagnostics:/data/diagnostics
+      - clinic_reports:/data/shared_reports
+    restart: unless-stopped
+
+volumes:
+  clinic_data:
+  clinic_media:
+  clinic_logs:
+  clinic_diagnostics:
+  clinic_reports:
