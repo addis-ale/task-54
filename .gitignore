@@ -80,7 +80,7 @@ ehthumbs.db
 Desktop.ini
 
 # ---- Environment & Config Overrides ----
-.env
+# .env
 .env.local
 .env.*.local
 config.local.yaml
