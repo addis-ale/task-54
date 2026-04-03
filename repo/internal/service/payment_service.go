@@ -253,7 +253,7 @@ func (s *PaymentService) Refund(ctx context.Context, input RefundPaymentInput) (
 
 	original, err := s.payments.GetByID(ctx, input.PaymentID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: payment with id %d not found", ErrNotFound, input.PaymentID)
 	}
 	if original.Status != domain.PaymentStatusSucceeded {
 		return nil, fmt.Errorf("%w: only succeeded payments can be refunded", ErrConflict)
