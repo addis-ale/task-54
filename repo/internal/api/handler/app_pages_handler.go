@@ -218,6 +218,21 @@ func (h *AppPagesHandler) PanelExercises(c *fiber.Ctx) error {
 	return c.SendString(result)
 }
 
+func (h *AppPagesHandler) CreateExercise(c *fiber.Ctx) error {
+	_, err := h.exercises.Create(c.UserContext(), service.CreateExerciseInput{
+		Title:             strings.TrimSpace(c.FormValue("title")),
+		Difficulty:        strings.TrimSpace(c.FormValue("difficulty")),
+		Description:       strings.TrimSpace(c.FormValue("description")),
+		BodyRegions:       splitCSV(c.FormValue("body_region")),
+		Contraindications: splitCSV(c.FormValue("contraindications")),
+		CoachingPoints:    strings.TrimSpace(c.FormValue("coaching_points")),
+	})
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: ` + html.EscapeString(err.Error()) + `</div>`)
+	}
+	return h.PanelExercises(c)
+}
+
 func (h *AppPagesHandler) ToggleFavorite(c *fiber.Ctx) error {
 	authCtx, ok := middleware.CurrentAuth(c)
 	if !ok || authCtx.User == nil {

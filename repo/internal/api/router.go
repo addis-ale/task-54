@@ -157,6 +157,7 @@ func Register(app *fiber.App, deps Dependencies) {
 	ui.Post("/care/checkpoints", middleware.RequirePermissions(domain.PermissionCareQualityWrite), appPagesHandler.CreateCheckpoint)
 	ui.Post("/care/alerts", middleware.RequirePermissions(domain.PermissionAlertsWrite), appPagesHandler.CreateAlert)
 	ui.Get("/panels/exercises", middleware.RequirePermissions(domain.PermissionExercisesRead), appPagesHandler.PanelExercises)
+	ui.Post("/exercises/create", middleware.RequirePermissions(domain.PermissionExercisesWrite), appPagesHandler.CreateExercise)
 	ui.Post("/exercises/:exercise_id/favorite", middleware.RequirePermissions(domain.PermissionExercisesRead), appPagesHandler.ToggleFavorite)
 	ui.Get("/panels/scheduling", middleware.RequirePermissions(domain.PermissionSchedulingRead), appPagesHandler.PanelScheduling)
 	ui.Post("/scheduling/templates", middleware.RequirePermissions(domain.PermissionSchedulingWrite), appPagesHandler.CreateTemplate)
