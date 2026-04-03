@@ -15,20 +15,17 @@ import (
 // Tokens are stored in a cookie and must be echoed back via the X-CSRF-Token header or _csrf form field.
 func CSRFProtect(cookieSecure bool) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		// Only enforce on state-changing methods
 		method := strings.ToUpper(c.Method())
 		if method == "GET" || method == "HEAD" || method == "OPTIONS" {
 			ensureCSRFCookie(c, cookieSecure)
 			return c.Next()
 		}
 
-		// Read token from cookie
 		cookieToken := c.Cookies("clinic_csrf")
 		if cookieToken == "" {
 			return httpx.Error(c, fiber.StatusForbidden, "CSRF_MISSING", "CSRF token cookie not found", nil)
 		}
 
-		// Read token from header or form field
 		headerToken := strings.TrimSpace(c.Get("X-CSRF-Token"))
 		if headerToken == "" {
 			headerToken = strings.TrimSpace(c.FormValue("_csrf"))
@@ -42,8 +39,19 @@ func CSRFProtect(cookieSecure bool) fiber.Handler {
 	}
 }
 
+// CSRFToken returns the current CSRF token for the request, reading from
+// the incoming cookie or from Locals (set when a new cookie is generated).
+func CSRFToken(c *fiber.Ctx) string {
+	if token, ok := c.Locals("csrf_token").(string); ok && token != "" {
+		return token
+	}
+	return c.Cookies("clinic_csrf")
+}
+
 func ensureCSRFCookie(c *fiber.Ctx, secure bool) {
-	if c.Cookies("clinic_csrf") != "" {
+	existing := c.Cookies("clinic_csrf")
+	if existing != "" {
+		c.Locals("csrf_token", existing)
 		return
 	}
 	token := generateCSRFToken()
@@ -51,10 +59,11 @@ func ensureCSRFCookie(c *fiber.Ctx, secure bool) {
 		Name:     "clinic_csrf",
 		Value:    token,
 		Path:     "/",
-		HTTPOnly: false, // Needs to be readable by JavaScript for HTMX headers
+		HTTPOnly: false,
 		Secure:   secure,
 		SameSite: "Strict",
 	})
+	c.Locals("csrf_token", token)
 }
 
 func generateCSRFToken() string {

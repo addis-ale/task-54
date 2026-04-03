@@ -59,7 +59,7 @@ func NewAppPagesHandler(cfg config.Config, auth *service.AuthService, admissions
 
 func (h *AppPagesHandler) LoginPage(c *fiber.Ctx) error {
 	c.Type("html", "utf-8")
-	result, err := renderTemplate("login.gohtml", struct{ CSRFToken string }{CSRFToken: c.Cookies("clinic_csrf")})
+	result, err := renderTemplate("login.gohtml", struct{ CSRFToken string }{CSRFToken: middleware.CSRFToken(c)})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString("template error")
 	}
