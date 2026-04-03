@@ -215,6 +215,9 @@ select {
   border-color: #f4d791;
 }
 
+.btn-sm { font-size:.75rem; padding:.2rem .5rem; border:1px solid var(--accent); background:var(--paper); border-radius:4px; cursor:pointer; margin-top:.25rem; }
+.btn-sm:hover { background:#dff4f1; }
+
 @media (max-width: 900px) {
   .grid.two {
     grid-template-columns: 1fr;

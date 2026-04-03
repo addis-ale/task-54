@@ -27,6 +27,7 @@ module.exports = defineConfig({
       BOOTSTRAP_ADMIN_PASSWORD: "AdminPassword1!",
       APP_DB_PATH: "./data/e2e.db",
       APP_REPORTS_SHARED_ROOT: "./data/shared_reports_e2e",
+      APP_MASTER_KEY_B64: "ZTJlX3Rlc3Rfa2V5X2Zvcl9hZXMyNTZfMzJieXRlc1g=",
     },
   },
 });

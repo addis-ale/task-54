@@ -64,13 +64,12 @@ func main() {
 	careService := service.NewCareService(db, auditService)
 	examTemplateService := service.NewExamTemplateService(db, examScheduleRepo, schedulingService, auditService)
 
-	var fieldCipher *service.FieldCipher
-	if cfg.MasterKeyBase64 != "" {
-		cipher, err := service.NewFieldCipherFromBase64(cfg.MasterKeyBase64)
-		if err != nil {
-			log.Fatalf("load field cipher: %v", err)
-		}
-		fieldCipher = cipher
+	if cfg.MasterKeyBase64 == "" {
+		log.Fatalf("APP_MASTER_KEY_B64 is required but not set")
+	}
+	fieldCipher, err := service.NewFieldCipherFromBase64(cfg.MasterKeyBase64)
+	if err != nil {
+		log.Fatalf("load field cipher: %v", err)
 	}
 
 	paymentService := service.NewPaymentService(

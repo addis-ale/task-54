@@ -54,6 +54,9 @@ var occupancyFragmentTemplate = template.Must(template.New("occupancy_board").Fu
         <div class="bed-card-body">
           {{- if .PatientName }}
           <p class="bed-patient">{{ .PatientName }}</p>
+          {{- with .PatientID }}
+          <button class="btn-sm" hx-get="/ui/service-delivery/patient/{{ . }}" hx-target="#panel" title="View service delivery">Drill Down</button>
+          {{- end }}
           {{- else if eq .Status "occupied" }}
           <p class="bed-patient">Patient not linked</p>
           {{- else if eq .Status "cleaning" }}

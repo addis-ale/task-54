@@ -1,0 +1,39 @@
+<section class="view active"><div class="grid two"><article class="card"><h3>Create Exam Template</h3><form class="stack-form" hx-post="/ui/scheduling/templates" hx-target="#panel"><label>Title<input name="title" required></label><label>Subject<input name="subject" required></label><label>Duration Minutes<input type="number" name="duration_minutes" value="90" required></label><label>Room ID<input type="number" name="room_id" required></label><label>Proctor ID<input type="number" name="proctor_id" required></label><label>Candidate IDs<input name="candidate_ids" placeholder="1001,1002" required></label><label>Window Label<input name="window_label" value="Morning"></label><label>Window Start<input type="datetime-local" name="window_start_at" required></label><label>Window End<input type="datetime-local" name="window_end_at" required></label><button type="submit">Save Template</button></form></article><article class="card"><h3>Generate Session Draft</h3><form class="stack-form" hx-post="/ui/scheduling/drafts/generate" hx-target="#panel"><label>Template ID<input type="number" name="template_id" required></label><label>Window ID<input type="number" name="window_id" required></label><label>Start At (optional RFC3339)<input name="start_at"></label><button type="submit">Generate Draft</button></form></article></div><article class="card"><h3>Exam Templates</h3><div class="stack">{{if not .Templates}}<p class="hint">No templates configured.</p>{{end}}{{range .Templates}}<div class="exercise-row"><div><strong>#{{.ID}} {{.Title}}</strong><div>{{.Subject}} ({{.DurationMinutes}} min)</div></div><div>room {{.RoomID}} / proctor {{.ProctorID}}</div></div>{{range .Windows}}<div class="hint">window #{{.ID}} {{.Label}}: {{.WindowStartAt.Format "01/02/2006 15:04"}}-{{.WindowEndAt.Format "15:04"}}</div>{{end}}{{end}}</div></article><article class="card"><h3>Visual Timeline (Drag to Adjust)</h3>{{if .TimelineBlocks}}<div id="timeline-grid" style="position:relative;border:1px solid #ccc;border-radius:4px;min-height:80px;margin:8px 0;overflow-x:auto;background:repeating-linear-gradient(90deg,#f0f0f0,#f0f0f0 1px,transparent 1px,transparent 60px)">{{range .TimelineBlocks}}<div class="timeline-block" draggable="true" data-draft-id="{{.DraftID}}" data-start="{{.StartISO}}" data-end="{{.EndISO}}" style="position:absolute;left:{{.Left}}px;top:10px;width:{{.Width}}px;height:50px;background:#4a90d9;color:#fff;border-radius:4px;cursor:grab;display:flex;align-items:center;justify-content:center;font-size:12px;user-select:none" title="Drag to adjust">Draft #{{.DraftID}}</div>{{end}}</div><div style="display:flex;justify-content:space-between;font-size:11px;color:#666"><span>{{.MinTime}}</span><span>{{.MaxTime}}</span></div><script>
+(function(){
+  var grid = document.getElementById('timeline-grid');
+  if(!grid) return;
+  var blocks = grid.querySelectorAll('.timeline-block');
+  var gridWidth = {{.GridWidth}};
+  var rangeMs = {{.RangeMs}};
+  var minTime = new Date('{{.MinTimeISO}}').getTime();
+  var dragBlock = null, dragStartX = 0, origLeft = 0;
+  blocks.forEach(function(block){
+    block.addEventListener('mousedown', function(e){
+      dragBlock = block; dragStartX = e.clientX; origLeft = parseInt(block.style.left)||0; e.preventDefault();
+    });
+  });
+  document.addEventListener('mousemove', function(e){
+    if(!dragBlock) return;
+    var dx = e.clientX - dragStartX;
+    dragBlock.style.left = Math.max(0, Math.min(gridWidth - parseInt(dragBlock.style.width), origLeft + dx)) + 'px';
+  });
+  document.addEventListener('mouseup', function(){
+    if(!dragBlock) return;
+    var block = dragBlock; dragBlock = null;
+    var newLeft = parseInt(block.style.left)||0;
+    var blockWidth = parseInt(block.style.width)||0;
+    var startMs = minTime + (newLeft / gridWidth) * rangeMs;
+    var endMs = minTime + ((newLeft + blockWidth) / gridWidth) * rangeMs;
+    var startISO = new Date(startMs).toISOString();
+    var endISO = new Date(endMs).toISOString();
+    var draftId = block.getAttribute('data-draft-id');
+    var form = new FormData();
+    form.append('start_at', startISO);
+    form.append('end_at', endISO);
+    var headers = {'Idempotency-Key': 'drag:' + draftId + ':' + Date.now()};
+    fetch('/ui/scheduling/drafts/' + draftId + '/adjust', {method:'POST', body:form, credentials:'include', headers:headers})
+      .then(function(r){ return r.text(); })
+      .then(function(html){ document.getElementById('panel').innerHTML = html; });
+  });
+})();
+</script>{{else}}<p class="hint">No drafts to display on timeline.</p>{{end}}</article><article class="card"><h3>Session Drafts (Adjust Before Publish)</h3><div class="stack">{{if not .Drafts}}<p class="hint">No session drafts yet.</p>{{end}}{{range .Drafts}}<div class="exercise-row"><div><strong>Draft #{{.ID}}</strong><div>{{.StartAt.Format "2006-01-02T15:04:05Z07:00"}} to {{.EndAt.Format "2006-01-02T15:04:05Z07:00"}}</div></div><div>Status: {{.Status}}</div></div>{{if .Conflicts}}<pre class="output">conflicts: {{printf "%v" .Conflicts}}</pre>{{end}}{{if ne .Status "published"}}<form class="stack-form" hx-post="/ui/scheduling/drafts/{{.ID}}/adjust" hx-target="#panel"><label>Start At<input type="datetime-local" name="start_at" value="{{.StartAt.Format "2006-01-02T15:04"}}"></label><label>End At<input type="datetime-local" name="end_at" value="{{.EndAt.Format "2006-01-02T15:04"}}"></label><button type="submit">Adjust Time Block</button></form><button hx-post="/ui/scheduling/drafts/{{.ID}}/publish" hx-target="#panel">Publish Session</button>{{end}}{{end}}</div></article></section>

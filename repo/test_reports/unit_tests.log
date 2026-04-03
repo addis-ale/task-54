@@ -1,0 +1,90 @@
+=== RUN   TestAdmissionsServiceLifecycleTransitions
+--- PASS: TestAdmissionsServiceLifecycleTransitions (0.20s)
+=== RUN   TestAdmissionsServiceValidationAndConflictHandling
+--- PASS: TestAdmissionsServiceValidationAndConflictHandling (0.24s)
+=== RUN   TestAuditHashChainIntegrity
+--- PASS: TestAuditHashChainIntegrity (0.22s)
+=== RUN   TestAuditHashChainAppendOnlyEnforced
+--- PASS: TestAuditHashChainAppendOnlyEnforced (0.32s)
+=== RUN   TestAuditHashChainFirstEventHasNilOrEmptyPrev
+--- PASS: TestAuditHashChainFirstEventHasNilOrEmptyPrev (0.19s)
+=== RUN   TestPasswordPolicyRejectsShortPasswords
+--- PASS: TestPasswordPolicyRejectsShortPasswords (0.00s)
+=== RUN   TestPasswordPolicyRejectsMissingUppercase
+--- PASS: TestPasswordPolicyRejectsMissingUppercase (0.00s)
+=== RUN   TestPasswordPolicyRejectsMissingDigit
+--- PASS: TestPasswordPolicyRejectsMissingDigit (0.00s)
+=== RUN   TestPasswordPolicyRejectsMissingSpecial
+--- PASS: TestPasswordPolicyRejectsMissingSpecial (0.00s)
+=== RUN   TestPasswordPolicyAcceptsStrongPassword
+--- PASS: TestPasswordPolicyAcceptsStrongPassword (0.00s)
+=== RUN   TestSessionExpiryAfter15MinutesInactivity
+--- PASS: TestSessionExpiryAfter15MinutesInactivity (0.24s)
+=== RUN   TestAccountLockoutAfter5Failures
+--- PASS: TestAccountLockoutAfter5Failures (0.30s)
+=== RUN   TestAccountLockoutExponentialBackoff
+--- PASS: TestAccountLockoutExponentialBackoff (0.43s)
+=== RUN   TestTokenValidationRejectsExpiredTokens
+--- PASS: TestTokenValidationRejectsExpiredTokens (2.21s)
+=== RUN   TestTokenValidationRejectsEmptyToken
+--- PASS: TestTokenValidationRejectsEmptyToken (0.12s)
+=== RUN   TestTokenValidationRejectsBogusToken
+--- PASS: TestTokenValidationRejectsBogusToken (0.16s)
+=== RUN   TestLogoutInvalidatesSession
+--- PASS: TestLogoutInvalidatesSession (0.17s)
+=== RUN   TestFieldCipherRoundTrip
+--- PASS: TestFieldCipherRoundTrip (0.00s)
+=== RUN   TestFieldCipherRoundTripVariousInputs
+--- PASS: TestFieldCipherRoundTripVariousInputs (0.00s)
+=== RUN   TestFieldCipherInvalidKey
+--- PASS: TestFieldCipherInvalidKey (0.00s)
+=== RUN   TestFieldCipherInvalidBase64Key
+--- PASS: TestFieldCipherInvalidBase64Key (0.00s)
+=== RUN   TestFieldCipherCorruptedCiphertext
+--- PASS: TestFieldCipherCorruptedCiphertext (0.00s)
+=== RUN   TestFieldCipherDecryptWithWrongKey
+--- PASS: TestFieldCipherDecryptWithWrongKey (0.00s)
+=== RUN   TestFieldCipherDecryptTruncatedPayload
+--- PASS: TestFieldCipherDecryptTruncatedPayload (0.00s)
+=== RUN   TestMediaServiceIngestWithChecksumValidation
+--- PASS: TestMediaServiceIngestWithChecksumValidation (0.16s)
+=== RUN   TestMediaServiceStreamingWithRangeHeaders
+--- PASS: TestMediaServiceStreamingWithRangeHeaders (0.19s)
+=== RUN   TestMediaServiceRejectsInvalidExerciseID
+--- PASS: TestMediaServiceRejectsInvalidExerciseID (0.16s)
+=== RUN   TestMediaServiceRejectsMissingMediaType
+--- PASS: TestMediaServiceRejectsMissingMediaType (0.17s)
+=== RUN   TestMediaServiceRejectsMissingFile
+--- PASS: TestMediaServiceRejectsMissingFile (0.17s)
+=== RUN   TestMediaServicePathTraversalPrevention
+--- PASS: TestMediaServicePathTraversalPrevention (0.32s)
+=== RUN   TestMediaServiceRejectsNonExistentExercise
+--- PASS: TestMediaServiceRejectsNonExistentExercise (0.17s)
+=== RUN   TestCashGatewayAdapter
+--- PASS: TestCashGatewayAdapter (0.00s)
+=== RUN   TestCheckGatewayAdapter
+--- PASS: TestCheckGatewayAdapter (0.00s)
+=== RUN   TestFacilityChargeGatewayAdapter
+--- PASS: TestFacilityChargeGatewayAdapter (0.00s)
+=== RUN   TestLocalCardGatewayAdapter
+--- PASS: TestLocalCardGatewayAdapter (0.00s)
+=== RUN   TestImportedCardBatchGatewayAdapter
+--- PASS: TestImportedCardBatchGatewayAdapter (0.00s)
+=== RUN   TestGatewayAdaptersHandleZeroAmount
+--- PASS: TestGatewayAdaptersHandleZeroAmount (0.00s)
+=== RUN   TestSchedulingOverlapPredicateForRoomProctorCandidate
+--- PASS: TestSchedulingOverlapPredicateForRoomProctorCandidate (0.16s)
+=== RUN   TestSchedulingServiceValidateWithRepositoryMock
+--- PASS: TestSchedulingServiceValidateWithRepositoryMock (0.00s)
+=== RUN   TestSchedulingServiceIllegalInputs
+--- PASS: TestSchedulingServiceIllegalInputs (0.00s)
+=== RUN   TestSettlementServiceMatchedAndDiscrepancyFlows
+--- PASS: TestSettlementServiceMatchedAndDiscrepancyFlows (0.18s)
+=== RUN   TestSettlementServiceValidationErrors
+--- PASS: TestSettlementServiceValidationErrors (0.26s)
+=== RUN   TestWorkOrderCompletionCriticalTransition
+--- PASS: TestWorkOrderCompletionCriticalTransition (0.25s)
+=== RUN   TestWorkOrderCompleteWithoutStartFails
+--- PASS: TestWorkOrderCompleteWithoutStartFails (0.19s)
+PASS
+ok  	clinic-admin-suite/unit_tests	9.557s

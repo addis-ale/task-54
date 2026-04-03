@@ -314,12 +314,14 @@ func (s *ReportService) RunDueSchedules(ctx context.Context, now time.Time) erro
 
 		status := "completed"
 		summary := map[string]any{"schedule_id": schedule.ID, "report_type": schedule.ReportType}
+		var rootCause string
 		if err != nil {
 			status = "failed"
 			summary["error"] = err.Error()
+			rootCause = err.Error()
 		}
 		if s.jobRuns != nil {
-			_ = s.jobRuns.Record(ctx, JobRunInput{JobType: "report_schedule", StartedAt: start, FinishedAt: finish, Status: status, Summary: summary})
+			_ = s.jobRuns.Record(ctx, JobRunInput{JobType: "report_schedule", StartedAt: start, FinishedAt: finish, Status: status, Summary: summary, FailureRootCauseNotes: rootCause})
 		}
 
 		nextRun := now.UTC().Add(time.Duration(schedule.IntervalMinutes) * time.Minute)

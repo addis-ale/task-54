@@ -1,0 +1,20 @@
+=== RUN   TestAuthLoginFunctionalAndMalformedJSON
+--- PASS: TestAuthLoginFunctionalAndMalformedJSON (1.53s)
+=== RUN   TestAdmissionsEndpointMutatesState
+--- PASS: TestAdmissionsEndpointMutatesState (1.64s)
+=== RUN   TestExamSchedulesIdempotencyAndConflictScenarios
+--- PASS: TestExamSchedulesIdempotencyAndConflictScenarios (1.67s)
+=== RUN   TestRBACForbiddenAndValidationErrors
+--- PASS: TestRBACForbiddenAndValidationErrors (1.90s)
+=== RUN   TestFrontendAssetsAndFinanceRefundExport
+--- PASS: TestFrontendAssetsAndFinanceRefundExport (1.74s)
+=== RUN   TestFinanceShiftPolicyValidation
+--- PASS: TestFinanceShiftPolicyValidation (1.51s)
+=== RUN   TestCareSchedulingGovernanceFlows
+--- PASS: TestCareSchedulingGovernanceFlows (1.76s)
+=== RUN   TestRateLimiterBlocksBruteForceLogin
+--- PASS: TestRateLimiterBlocksBruteForceLogin (1.17s)
+=== RUN   TestCSRFEnforcementOnUIFormSubmission
+--- PASS: TestCSRFEnforcementOnUIFormSubmission (1.32s)
+PASS
+ok  	clinic-admin-suite/API_tests	14.719s

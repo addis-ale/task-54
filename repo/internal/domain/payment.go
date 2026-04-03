@@ -22,7 +22,8 @@ type Payment struct {
 	Version         int64     `json:"version"`
 	PIIReferenceEnc *string   `json:"-"`
 	PIIKeyVersion   *int      `json:"-"`
-	FailureReason   *string   `json:"failure_reason,omitempty"`
+	FailureReason      *string `json:"failure_reason,omitempty"`
+	PIIReferenceMasked *string `json:"payer_reference,omitempty"`
 }
 
 type PaymentEvent struct {

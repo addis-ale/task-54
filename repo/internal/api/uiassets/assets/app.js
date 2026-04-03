@@ -47,6 +47,8 @@
       headers["Idempotency-Key"] =
         `${method}:${url}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
     }
+    var csrfMatch = document.cookie.match(/(?:^|;\s*)clinic_csrf=([^;]*)/);
+    if (csrfMatch) { headers["X-CSRF-Token"] = csrfMatch[1]; }
 
     const response = await fetch(url, {
       method,

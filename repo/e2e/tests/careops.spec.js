@@ -2,8 +2,8 @@ const { test, expect } = require("@playwright/test");
 
 async function login(page) {
   await page.goto("/login");
-  await page.getByLabel("Username").fill("admin");
-  await page.getByLabel("Password").fill("AdminPassword1!");
+  await page.getByLabel("Username").fill(process.env.E2E_USERNAME || "admin");
+  await page.getByLabel("Password").fill(process.env.E2E_PASSWORD || "AdminPassword1!");
   await page.getByRole("button", { name: "Sign In" }).click();
   await expect(page).toHaveURL(/\/app$/, { timeout: 15000 });
   await expect(

@@ -474,6 +474,99 @@ func TestCareSchedulingGovernanceFlows(t *testing.T) {
 	}
 }
 
+func TestRateLimiterBlocksBruteForceLogin(t *testing.T) {
+	env := setupAPIEnv(t)
+
+	for i := 0; i < 12; i++ {
+		username := "nonexistent_user_" + strconv.Itoa(i)
+		payload, _ := json.Marshal(map[string]any{"username": username, "password": "WrongPass!"})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		res, err := env.app.Test(req, -1)
+		if err != nil {
+			t.Fatalf("login request %d failed: %v", i, err)
+		}
+		res.Body.Close()
+		if res.StatusCode == http.StatusTooManyRequests {
+			return
+		}
+	}
+	t.Fatalf("expected rate limiter to block after repeated login attempts, but all 12 requests succeeded")
+}
+
+func TestCSRFEnforcementOnUIFormSubmission(t *testing.T) {
+	env := setupAPIEnv(t)
+	adminCookie := loginAs(t, env.app, env.cfg, "admin", "AdminPassword1!")
+
+	// GET a panel page to receive the CSRF cookie
+	panelReq := httptest.NewRequest(http.MethodGet, "/ui/panels/care", nil)
+	panelReq.Header.Set("Cookie", adminCookie)
+	panelRes, err := env.app.Test(panelReq, -1)
+	if err != nil {
+		t.Fatalf("panel request failed: %v", err)
+	}
+	panelRes.Body.Close()
+
+	var csrfToken string
+	for _, cookie := range panelRes.Cookies() {
+		if cookie.Name == "clinic_csrf" {
+			csrfToken = cookie.Value
+			break
+		}
+	}
+	if csrfToken == "" {
+		t.Fatalf("expected clinic_csrf cookie from GET request")
+	}
+
+	// Create a patient first
+	patientRes := doJSON(t, env.app, http.MethodPost, "/api/v1/patients", map[string]any{"mrn": "CSRF-001", "name": "Test Patient"}, map[string]string{"Cookie": adminCookie})
+	if patientRes.status != http.StatusCreated {
+		t.Fatalf("create patient failed status=%d body=%s", patientRes.status, string(patientRes.body))
+	}
+	patientID := int64FromData(t, patientRes.env.Data["patient"], "id")
+
+	// POST without CSRF token should fail with 403
+	noCSRFReq := httptest.NewRequest(http.MethodGet, "/ui/service-delivery/patient/"+strconv.FormatInt(patientID, 10), nil)
+	noCSRFReq.Header.Set("Cookie", adminCookie+"; clinic_csrf="+csrfToken)
+	noCSRFRes, err := env.app.Test(noCSRFReq, -1)
+	if err != nil {
+		t.Fatalf("service delivery request failed: %v", err)
+	}
+	noCSRFRes.Body.Close()
+	if noCSRFRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected GET service delivery to succeed, got status=%d", noCSRFRes.StatusCode)
+	}
+
+	// POST without CSRF token should fail
+	postNoCSRFReq := httptest.NewRequest(http.MethodPost, "/ui/care/checkpoints", strings.NewReader("resident_id="+strconv.FormatInt(patientID, 10)+"&checkpoint_type=hydration&status=pass&notes=test"))
+	postNoCSRFReq.Header.Set("Cookie", adminCookie+"; clinic_csrf="+csrfToken)
+	postNoCSRFReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postNoCSRFReq.Header.Set("Idempotency-Key", "csrf-test-no-token")
+	postNoCSRFRes, err := env.app.Test(postNoCSRFReq, -1)
+	if err != nil {
+		t.Fatalf("POST without CSRF failed: %v", err)
+	}
+	postNoCSRFRes.Body.Close()
+	if postNoCSRFRes.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for POST without CSRF token, got %d", postNoCSRFRes.StatusCode)
+	}
+
+	// POST with valid CSRF token should succeed
+	postWithCSRFReq := httptest.NewRequest(http.MethodPost, "/ui/care/checkpoints", strings.NewReader("resident_id="+strconv.FormatInt(patientID, 10)+"&checkpoint_type=hydration&status=pass&notes=test"))
+	postWithCSRFReq.Header.Set("Cookie", adminCookie+"; clinic_csrf="+csrfToken)
+	postWithCSRFReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	postWithCSRFReq.Header.Set("X-CSRF-Token", csrfToken)
+	postWithCSRFReq.Header.Set("Idempotency-Key", "csrf-test-with-token")
+	postWithCSRFRes, err := env.app.Test(postWithCSRFReq, -1)
+	if err != nil {
+		t.Fatalf("POST with CSRF failed: %v", err)
+	}
+	postWithCSRFRes.Body.Close()
+	if postWithCSRFRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for POST with valid CSRF token, got %d", postWithCSRFRes.StatusCode)
+	}
+}
+
 func setupAPIEnv(t *testing.T) *apiEnv {
 	t.Helper()
 
@@ -518,7 +611,12 @@ func setupAPIEnv(t *testing.T) *apiEnv {
 	careService := service.NewCareService(db, auditService)
 	examTemplateService := service.NewExamTemplateService(db, examScheduleRepo, schedulingService, auditService)
 	logs := service.NewStructuredLogService(filepath.Join(t.TempDir(), "logs", "structured.log"))
-	paymentService := service.NewPaymentService(db, paymentRepo, paymentEventRepo, auditService, nil, 1, []service.GatewayAdapter{&service.CashGatewayAdapter{}, &service.CheckGatewayAdapter{}, &service.FacilityChargeGatewayAdapter{}, &service.ImportedCardBatchGatewayAdapter{}, &service.LocalCardGatewayAdapter{}}, logs)
+	testCipher, err := service.NewFieldCipherFromBase64("ZTJlX3Rlc3Rfa2V5X2Zvcl9hZXMyNTZfMzJieXRlc1g=")
+	if err != nil {
+		_ = db.Close()
+		t.Fatalf("create test cipher: %v", err)
+	}
+	paymentService := service.NewPaymentService(db, paymentRepo, paymentEventRepo, auditService, testCipher, 1, []service.GatewayAdapter{&service.CashGatewayAdapter{}, &service.CheckGatewayAdapter{}, &service.FacilityChargeGatewayAdapter{}, &service.ImportedCardBatchGatewayAdapter{}, &service.LocalCardGatewayAdapter{}}, logs)
 	settlementService := service.NewSettlementService(db, paymentRepo, settlementRepo, auditService, jobRunService, logs)
 	diagnosticsService := service.NewDiagnosticsService(db, logs.Path(), filepath.Join(t.TempDir(), "diag"))
 	reportService := service.NewReportService(db, paymentRepo)

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"clinic-admin-suite/internal/api/httpx"
+	"clinic-admin-suite/internal/api/middleware"
+	"clinic-admin-suite/internal/domain"
 	"clinic-admin-suite/internal/repository"
 	"clinic-admin-suite/internal/service"
 
@@ -44,6 +46,31 @@ func (h *PaymentsHandler) List(c *fiber.Ctx) error {
 	})
 	if err != nil {
 		return handleServiceError(c, err, "Failed to list payments")
+	}
+
+	authCtx, _ := middleware.CurrentAuth(c)
+	isFinanceRole := authCtx != nil && authCtx.User != nil && (authCtx.User.Role == string(domain.RoleAdmin) || authCtx.User.Role == string(domain.RoleFinanceClerk))
+
+	for i := range items {
+		if items[i].PIIReferenceEnc == nil {
+			continue
+		}
+		if isFinanceRole {
+			plain, err := h.payments.DecryptPII(*items[i].PIIReferenceEnc)
+			if err == nil {
+				v := plain
+				items[i].PIIReferenceMasked = &v
+			}
+		} else {
+			plain, err := h.payments.DecryptPII(*items[i].PIIReferenceEnc)
+			if err == nil && len(plain) > 4 {
+				masked := strings.Repeat("*", len(plain)-4) + plain[len(plain)-4:]
+				items[i].PIIReferenceMasked = &masked
+			} else if err == nil {
+				masked := strings.Repeat("*", len(plain))
+				items[i].PIIReferenceMasked = &masked
+			}
+		}
 	}
 
 	return httpx.OK(c, fiber.StatusOK, fiber.Map{"payments": items})

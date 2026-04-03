@@ -358,6 +358,17 @@ func (s *PaymentService) Refund(ctx context.Context, input RefundPaymentInput) (
 	return s.payments.GetByID(ctx, refundPayment.ID)
 }
 
+func (s *PaymentService) DecryptPII(encrypted string) (string, error) {
+	if s.fieldCipher == nil {
+		return "", fmt.Errorf("field cipher not configured")
+	}
+	plain, err := s.fieldCipher.Decrypt(encrypted)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
+}
+
 func fallbackRequestID(requestID string) string {
 	requestID = strings.TrimSpace(requestID)
 	if requestID == "" {

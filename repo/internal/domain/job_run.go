@@ -8,5 +8,6 @@ type JobRun struct {
 	StartedAt   time.Time `json:"started_at"`
 	FinishedAt  time.Time `json:"finished_at"`
 	Status      string    `json:"status"`
-	SummaryJSON *string   `json:"summary_json,omitempty"`
+	SummaryJSON           *string `json:"summary_json,omitempty"`
+	FailureRootCauseNotes *string `json:"failure_root_cause_notes,omitempty"`
 }

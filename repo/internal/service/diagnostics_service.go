@@ -69,6 +69,11 @@ func (s *DiagnosticsService) Export(ctx context.Context) (*DiagnosticsExport, er
 		return nil, err
 	}
 
+	if err := s.addRecentJobResults(ctx, zipWriter); err != nil {
+		zipWriter.Close()
+		return nil, err
+	}
+
 	if err := zipWriter.Close(); err != nil {
 		return nil, fmt.Errorf("finalize diagnostics zip: %w", err)
 	}
@@ -260,4 +265,57 @@ func (s *DiagnosticsService) verifyAuditChain(ctx context.Context) (map[string]a
 		"status":       "ok",
 		"record_count": count,
 	}, nil
+}
+
+func (s *DiagnosticsService) addRecentJobResults(ctx context.Context, zipWriter *zip.Writer) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, job_type, started_at, finished_at, status, summary_json, failure_root_cause_notes FROM job_runs ORDER BY started_at DESC LIMIT 50`)
+	if err != nil {
+		return fmt.Errorf("query recent job runs: %w", err)
+	}
+	defer rows.Close()
+
+	type jobRow struct {
+		ID                    int64   `json:"id"`
+		JobType               string  `json:"job_type"`
+		StartedAt             int64   `json:"started_at"`
+		FinishedAt            int64   `json:"finished_at"`
+		Status                string  `json:"status"`
+		SummaryJSON           *string `json:"summary_json,omitempty"`
+		FailureRootCauseNotes *string `json:"failure_root_cause_notes,omitempty"`
+	}
+	items := make([]jobRow, 0)
+	for rows.Next() {
+		var item jobRow
+		var summary sql.NullString
+		var rootCause sql.NullString
+		if err := rows.Scan(&item.ID, &item.JobType, &item.StartedAt, &item.FinishedAt, &item.Status, &summary, &rootCause); err != nil {
+			return fmt.Errorf("scan job run row: %w", err)
+		}
+		if summary.Valid {
+			item.SummaryJSON = &summary.String
+		}
+		if rootCause.Valid {
+			item.FailureRootCauseNotes = &rootCause.String
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate job run rows: %w", err)
+	}
+
+	entry, err := zipWriter.Create("jobs/recent_results.json")
+	if err != nil {
+		return fmt.Errorf("create jobs entry in diagnostics bundle: %w", err)
+	}
+
+	raw, err := json.MarshalIndent(map[string]any{"job_runs": items}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal job runs payload: %w", err)
+	}
+
+	if _, err := entry.Write(raw); err != nil {
+		return fmt.Errorf("write job runs payload to diagnostics bundle: %w", err)
+	}
+
+	return nil
 }

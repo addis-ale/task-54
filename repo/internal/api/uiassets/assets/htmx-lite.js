@@ -30,10 +30,17 @@
     target.innerHTML = html;
   }
 
+  function getCSRFToken() {
+    var match = document.cookie.match(/(?:^|;\s*)clinic_csrf=([^;]*)/);
+    return match ? match[1] : "";
+  }
+
   function request(method, url, targetSelector, swapMode, body) {
     var headers = { "HX-Request": "true" };
     if (method !== "GET") {
       headers["Idempotency-Key"] = idempotencyKey(url);
+      var csrf = getCSRFToken();
+      if (csrf) { headers["X-CSRF-Token"] = csrf; }
     }
 
     var options = {
@@ -53,6 +60,12 @@
         });
       })
       .then(function (res) {
+        if (res.status === 409) {
+          swapTarget(targetSelector, "<div class='card' style='border-left:4px solid var(--warn,#b04f2d);padding:1rem'><h4>Record Changed</h4><p>This record was modified by another user. The latest version has been reloaded.</p><button onclick=\"this.closest('.card').remove()\" style='margin-top:.5rem'>Dismiss</button></div>" + res.text, swapMode);
+          bindAll();
+          return;
+        }
+        if (res.status === 401) { window.location.href = "/login"; return; }
         swapTarget(targetSelector, res.text, swapMode);
         bindAll();
       })

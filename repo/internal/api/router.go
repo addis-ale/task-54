@@ -63,8 +63,9 @@ func Register(app *fiber.App, deps Dependencies) {
 
 	app.Get("/", uiShellHandler.IndexRedirect)
 	loginLimiter := middleware.IPRateLimiter(10, 1*time.Minute)
-	app.Get("/login", appPagesHandler.LoginPage)
-	app.Post("/login", loginLimiter, appPagesHandler.LoginSubmit)
+	csrfMiddleware := middleware.CSRFProtect(deps.Config.CookieSecure)
+	app.Get("/login", csrfMiddleware, appPagesHandler.LoginPage)
+	app.Post("/login", loginLimiter, csrfMiddleware, appPagesHandler.LoginSubmit)
 	app.Post("/logout", appPagesHandler.Logout)
 	app.Get("/app", appPagesHandler.AppShell)
 	app.Get("/assets/*", uiShellHandler.Asset)
@@ -143,6 +144,7 @@ func Register(app *fiber.App, deps Dependencies) {
 	admin.Get("/audit/ping", adminHandler.AuditPing)
 
 	ui := app.Group("/ui", middleware.RequireAuth(deps.AuthService, deps.Config.SessionCookieName))
+	ui.Use(csrfMiddleware)
 	ui.Use(middleware.RequireIdempotency(deps.IdempotencyRepo))
 	ui.Use(middleware.PrivilegedAudit(deps.AuditService))
 	ui.Get("/panels/overview", middleware.RequirePermissions(domain.PermissionKPIRead), appPagesHandler.PanelOverview)
@@ -168,5 +170,6 @@ func Register(app *fiber.App, deps Dependencies) {
 	ui.Post("/config/versions", middleware.RequirePermissions(domain.PermissionConfigManage), appPagesHandler.CreateConfigVersion)
 	ui.Post("/config/versions/:version_id/rollback", middleware.RequirePermissions(domain.PermissionConfigManage), appPagesHandler.RollbackConfigVersion)
 	ui.Get("/occupancy/board", middleware.RequirePermissions(domain.PermissionOccupancyRead), occupancyHandler.Board)
+	ui.Get("/service-delivery/patient/:patient_id", middleware.RequirePermissions(domain.PermissionKPIRead), appPagesHandler.ServiceDeliveryDrillDown)
 	ui.Get("/cache/lru", middleware.RequirePermissions(domain.PermissionUICacheRead), cacheUIHandler.LRUSimulator)
 }

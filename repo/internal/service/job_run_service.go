@@ -20,11 +20,12 @@ func NewJobRunService(runs repository.JobRunRepository) *JobRunService {
 }
 
 type JobRunInput struct {
-	JobType    string
-	StartedAt  time.Time
-	FinishedAt time.Time
-	Status     string
-	Summary    any
+	JobType               string
+	StartedAt             time.Time
+	FinishedAt            time.Time
+	Status                string
+	Summary               any
+	FailureRootCauseNotes string
 }
 
 func (s *JobRunService) Record(ctx context.Context, input JobRunInput) error {
@@ -46,12 +47,19 @@ func (s *JobRunService) record(ctx context.Context, tx *sql.Tx, input JobRunInpu
 		summaryJSON = &text
 	}
 
+	var rootCause *string
+	if input.FailureRootCauseNotes != "" {
+		v := input.FailureRootCauseNotes
+		rootCause = &v
+	}
+
 	run := &domain.JobRun{
-		JobType:     input.JobType,
-		StartedAt:   input.StartedAt.UTC(),
-		FinishedAt:  input.FinishedAt.UTC(),
-		Status:      input.Status,
-		SummaryJSON: summaryJSON,
+		JobType:               input.JobType,
+		StartedAt:             input.StartedAt.UTC(),
+		FinishedAt:            input.FinishedAt.UTC(),
+		Status:                input.Status,
+		SummaryJSON:           summaryJSON,
+		FailureRootCauseNotes: rootCause,
 	}
 
 	if tx != nil {

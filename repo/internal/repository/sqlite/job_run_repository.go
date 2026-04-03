@@ -27,15 +27,20 @@ func (r *JobRunRepository) CreateTx(ctx context.Context, tx *sql.Tx, run *domain
 
 func (r *JobRunRepository) create(ctx context.Context, runner execRunner, run *domain.JobRun) error {
 	const q = `
-INSERT INTO job_runs(job_type, started_at, finished_at, status, summary_json)
-VALUES(?, ?, ?, ?, ?)`
+INSERT INTO job_runs(job_type, started_at, finished_at, status, summary_json, failure_root_cause_notes)
+VALUES(?, ?, ?, ?, ?, ?)`
 
 	var summary sql.NullString
 	if run.SummaryJSON != nil {
 		summary = sql.NullString{String: *run.SummaryJSON, Valid: true}
 	}
 
-	result, err := runner.ExecContext(ctx, q, run.JobType, run.StartedAt.UTC().Unix(), run.FinishedAt.UTC().Unix(), run.Status, summary)
+	var rootCause sql.NullString
+	if run.FailureRootCauseNotes != nil {
+		rootCause = sql.NullString{String: *run.FailureRootCauseNotes, Valid: true}
+	}
+
+	result, err := runner.ExecContext(ctx, q, run.JobType, run.StartedAt.UTC().Unix(), run.FinishedAt.UTC().Unix(), run.Status, summary, rootCause)
 	if err != nil {
 		return fmt.Errorf("create job run: %w", err)
 	}
