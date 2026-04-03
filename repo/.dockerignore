@@ -1,0 +1,5 @@
+.env
+.git
+.tmp
+data/
+e2e/node_modules/
