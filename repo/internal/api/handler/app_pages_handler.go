@@ -137,13 +137,54 @@ func (h *AppPagesHandler) PanelOccupancy(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString("<div class='card'>Failed to load occupancy board</div>")
 	}
+	wards, _ := h.admissions.ListWards(c.UserContext())
+	patients, _ := h.admissions.ListPatients(c.UserContext())
+	beds, _ := h.admissions.ListBeds(c.UserContext(), repository.BedFilter{})
 	result, err := renderTemplate("panel_occupancy.gohtml", struct {
-		Items []domain.BedOccupancy
-	}{Items: items})
+		Items    []domain.BedOccupancy
+		Wards    []domain.Ward
+		Patients []domain.Patient
+		Beds     []domain.Bed
+	}{Items: items, Wards: wards, Patients: patients, Beds: beds})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString("template error")
 	}
 	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreateWard(c *fiber.Ctx) error {
+	_, err := h.admissions.CreateWard(c.UserContext(), service.CreateWardInput{Name: strings.TrimSpace(c.FormValue("name"))})
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: ` + html.EscapeString(err.Error()) + `</div>`)
+	}
+	return h.PanelOccupancy(c)
+}
+
+func (h *AppPagesHandler) CreatePatient(c *fiber.Ctx) error {
+	_, err := h.admissions.CreatePatient(c.UserContext(), service.CreatePatientInput{MRN: strings.TrimSpace(c.FormValue("mrn")), Name: strings.TrimSpace(c.FormValue("name"))})
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: ` + html.EscapeString(err.Error()) + `</div>`)
+	}
+	return h.PanelOccupancy(c)
+}
+
+func (h *AppPagesHandler) CreateBed(c *fiber.Ctx) error {
+	wardID, _ := strconv.ParseInt(c.FormValue("ward_id"), 10, 64)
+	_, err := h.admissions.CreateBed(c.UserContext(), service.CreateBedInput{WardID: wardID, BedCode: strings.TrimSpace(c.FormValue("bed_code"))})
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: ` + html.EscapeString(err.Error()) + `</div>`)
+	}
+	return h.PanelOccupancy(c)
+}
+
+func (h *AppPagesHandler) CreateAdmission(c *fiber.Ctx) error {
+	patientID, _ := strconv.ParseInt(c.FormValue("patient_id"), 10, 64)
+	bedID, _ := strconv.ParseInt(c.FormValue("bed_id"), 10, 64)
+	_, err := h.admissions.AssignAdmission(c.UserContext(), service.AssignAdmissionInput{PatientID: patientID, BedID: bedID, ActorID: currentActorIDFromContext(c)})
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: ` + html.EscapeString(err.Error()) + `</div>`)
+	}
+	return h.PanelOccupancy(c)
 }
 
 type exerciseView struct {

@@ -1,1 +1,11 @@
-<section class="view active"><article class="card"><h3>Occupancy Board</h3><div class="stack">{{if not .Items}}<p class="hint">No occupancy records found.</p>{{end}}{{range .Items}}<div class="exercise-row"><div><strong>{{.WardName}} / {{.BedCode}}</strong><div>{{.Status}}</div></div><div>{{with .PatientName}}{{.}}{{end}}</div></div>{{end}}</div></article></section>
+<section class="view active">
+<div class="grid two">
+<article class="card"><h3>Add Ward</h3><form class="stack-form" hx-post="/ui/occupancy/wards" hx-target="#panel"><label>Ward Name<input name="name" required placeholder="e.g. Rehab Wing A"></label><button type="submit">Create Ward</button></form></article>
+<article class="card"><h3>Add Patient</h3><form class="stack-form" hx-post="/ui/occupancy/patients" hx-target="#panel"><label>MRN<input name="mrn" required placeholder="e.g. MRN-001"></label><label>Name<input name="name" required placeholder="e.g. Jane Smith"></label><button type="submit">Create Patient</button></form></article>
+</div>
+<div class="grid two">
+<article class="card"><h3>Add Bed</h3><form class="stack-form" hx-post="/ui/occupancy/beds" hx-target="#panel"><label>Ward<select name="ward_id" required>{{if not .Wards}}<option value="">Create a ward first</option>{{end}}{{range .Wards}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label><label>Bed Code<input name="bed_code" required placeholder="e.g. A-101"></label><button type="submit">Create Bed</button></form></article>
+<article class="card"><h3>Admit Patient</h3><form class="stack-form" hx-post="/ui/occupancy/admissions" hx-target="#panel"><label>Patient<select name="patient_id" required>{{if not .Patients}}<option value="">Create a patient first</option>{{end}}{{range .Patients}}<option value="{{.ID}}">{{.Name}} ({{.MRN}})</option>{{end}}</select></label><label>Bed<select name="bed_id" required>{{if not .Beds}}<option value="">Create a bed first</option>{{end}}{{range .Beds}}{{if eq .Status "available"}}<option value="{{.ID}}">{{.WardName}} / {{.BedCode}} ({{.Status}})</option>{{end}}{{end}}</select></label><button type="submit">Assign Admission</button></form></article>
+</div>
+<article class="card"><h3>Occupancy Board</h3><div class="stack">{{if not .Items}}<p class="hint">No occupancy records found. Create wards, beds, and patients above to get started.</p>{{end}}{{range .Items}}<div class="exercise-row"><div><strong>{{.WardName}} / {{.BedCode}}</strong><div>{{.Status}}</div></div><div>{{with .PatientName}}{{.}}{{end}}</div></div>{{end}}</div></article>
+</section>
