@@ -778,3 +778,51 @@ func isMutationMethod(method string) bool {
 	m := strings.ToUpper(strings.TrimSpace(method))
 	return m == http.MethodPost || m == http.MethodPatch || m == http.MethodPut || m == http.MethodDelete
 }
+
+func TestAllPanelsRenderSuccessfully(t *testing.T) {
+	env := setupAPIEnv(t)
+	cookie := loginAs(t, env.app, env.cfg, "admin", "AdminPassword1!")
+
+	// Get CSRF cookie first
+	getReq := httptest.NewRequest(http.MethodGet, "/ui/panels/overview", nil)
+	getReq.Header.Set("Cookie", cookie)
+	getRes, err := env.app.Test(getReq, -1)
+	if err != nil {
+		t.Fatalf("GET overview failed: %v", err)
+	}
+	getRes.Body.Close()
+
+	var csrfCookie string
+	for _, c := range getRes.Cookies() {
+		if c.Name == "clinic_csrf" {
+			csrfCookie = "; clinic_csrf=" + c.Value
+		}
+	}
+
+	panels := []string{
+		"/ui/panels/overview",
+		"/ui/panels/occupancy",
+		"/ui/panels/exercises",
+		"/ui/panels/scheduling",
+		"/ui/panels/finance",
+		"/ui/panels/reports",
+		"/ui/panels/care",
+	}
+	for _, panel := range panels {
+		req := httptest.NewRequest(http.MethodGet, panel, nil)
+		req.Header.Set("Cookie", cookie+csrfCookie)
+		res, err := env.app.Test(req, 5000)
+		if err != nil {
+			t.Fatalf("panel %s request error: %v", panel, err)
+		}
+		body := readAll(t, res.Body)
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("panel %s status=%d body=%s", panel, res.StatusCode, string(body))
+		}
+		if len(body) < 20 {
+			t.Fatalf("panel %s returned suspiciously short body (len=%d): %s", panel, len(body), string(body))
+		}
+		t.Logf("OK %s status=%d len=%d", panel, res.StatusCode, len(body))
+	}
+}
