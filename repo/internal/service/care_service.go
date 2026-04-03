@@ -66,6 +66,12 @@ func (s *CareService) CreateCheckpoint(ctx context.Context, input CreateCheckpoi
 		return nil, fmt.Errorf("%w: status must be pass, watch, or fail", ErrValidation)
 	}
 
+	// Verify resident exists
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM patients WHERE id = ?`, input.ResidentID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("%w: resident (patient) with id %d not found — create the patient first", ErrValidation, input.ResidentID)
+	}
+
 	now := time.Now().UTC()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -195,6 +201,12 @@ func (s *CareService) CreateAlert(ctx context.Context, input CreateAlertInput) (
 	message := strings.TrimSpace(input.Message)
 	if message == "" {
 		return nil, fmt.Errorf("%w: message is required", ErrValidation)
+	}
+
+	// Verify resident exists
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM patients WHERE id = ?`, input.ResidentID).Scan(&exists); err != nil {
+		return nil, fmt.Errorf("%w: resident (patient) with id %d not found — create the patient first", ErrValidation, input.ResidentID)
 	}
 
 	now := time.Now().UTC()

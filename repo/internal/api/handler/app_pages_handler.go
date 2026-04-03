@@ -196,10 +196,12 @@ func (h *AppPagesHandler) ToggleFavorite(c *fiber.Ctx) error {
 func (h *AppPagesHandler) PanelCare(c *fiber.Ctx) error {
 	checkpoints, _ := h.care.ListCheckpoints(c.UserContext(), service.CareCheckpointFilter{})
 	alerts, _ := h.care.ListAlerts(c.UserContext(), service.AlertEventFilter{})
+	patients, _ := h.admissions.ListPatients(c.UserContext())
 	result, err := renderTemplate("panel_care.gohtml", struct {
 		Checkpoints []domain.CareQualityCheckpoint
 		Alerts      []domain.AlertEvent
-	}{Checkpoints: checkpoints, Alerts: alerts})
+		Patients    []domain.Patient
+	}{Checkpoints: checkpoints, Alerts: alerts, Patients: patients})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).SendString("template error")
 	}
