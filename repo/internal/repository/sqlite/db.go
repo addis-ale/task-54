@@ -20,7 +20,13 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("sql open: %w", err)
 	}
 
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL;`); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("enable WAL: %w", err)
+	}
 
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON;`); err != nil {
 		_ = db.Close()

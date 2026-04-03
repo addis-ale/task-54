@@ -63,7 +63,14 @@ Key variables (see [Environment Variables](#environment-variables) below for ful
 docker compose up --build
 ```
 
-The server will be available at **http://localhost:8080**.
+The server will be available at **http://localhost:8080**. You can access the UI at **http://localhost:8080/app**.
+
+#### Default Credentials
+On the first boot, an administrator account is automatically generated based on your `.env` configuration. If you used the provided `.env.example`, the default login is:
+- **Username**: `admin`
+- **Password**: `AdminPassword1!`
+
+> **Note:** It is highly recommended to change this password or set your own secure credentials in the `.env` file before deploying.
 
 To run in the background:
 

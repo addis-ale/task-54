@@ -86,18 +86,22 @@ WHERE ebr.exercise_id = e.id AND br.name = ?
 	}
 	defer rows.Close()
 
-	items := make([]domain.Exercise, 0)
+	exercises := make([]*domain.Exercise, 0)
 	for rows.Next() {
 		exercise, err := scanExercise(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan exercise row: %w", err)
 		}
+		exercises = append(exercises, exercise)
+	}
+	rows.Close() // Release the connection immediately
 
+	items := make([]domain.Exercise, len(exercises))
+	for i, exercise := range exercises {
 		if err := r.loadRelations(ctx, r.db, exercise); err != nil {
 			return nil, err
 		}
-
-		items = append(items, *exercise)
+		items[i] = *exercise
 	}
 
 	if err := rows.Err(); err != nil {

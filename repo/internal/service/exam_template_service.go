@@ -149,7 +149,7 @@ ORDER BY created_at DESC`)
 	}
 	defer rows.Close()
 
-	templates := make([]domain.ExamTemplate, 0)
+	templateItems := make([]domain.ExamTemplate, 0)
 	for rows.Next() {
 		var (
 			item      domain.ExamTemplate
@@ -168,18 +168,19 @@ ORDER BY created_at DESC`)
 			v := createdBy.Int64
 			item.CreatedBy = &v
 		}
+		templateItems = append(templateItems, item)
+	}
+	rows.Close() // Release the connection immediately
 
-		windows, err := s.listTemplateWindows(ctx, item.ID)
+	for i := range templateItems {
+		windows, err := s.listTemplateWindows(ctx, templateItems[i].ID)
 		if err != nil {
 			return nil, err
 		}
-		item.Windows = windows
-		templates = append(templates, item)
+		templateItems[i].Windows = windows
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate exam template rows: %w", err)
-	}
-	return templates, nil
+
+	return templateItems, nil
 }
 
 func (s *ExamTemplateService) listTemplateWindows(ctx context.Context, templateID int64) ([]domain.ExamTemplateWindow, error) {
