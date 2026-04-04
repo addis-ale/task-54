@@ -1,20 +1,29 @@
 === RUN   TestAuthLoginFunctionalAndMalformedJSON
---- PASS: TestAuthLoginFunctionalAndMalformedJSON (1.53s)
+--- PASS: TestAuthLoginFunctionalAndMalformedJSON (1.35s)
 === RUN   TestAdmissionsEndpointMutatesState
---- PASS: TestAdmissionsEndpointMutatesState (1.64s)
+--- PASS: TestAdmissionsEndpointMutatesState (1.85s)
 === RUN   TestExamSchedulesIdempotencyAndConflictScenarios
---- PASS: TestExamSchedulesIdempotencyAndConflictScenarios (1.67s)
+--- PASS: TestExamSchedulesIdempotencyAndConflictScenarios (1.45s)
 === RUN   TestRBACForbiddenAndValidationErrors
---- PASS: TestRBACForbiddenAndValidationErrors (1.90s)
+--- PASS: TestRBACForbiddenAndValidationErrors (2.17s)
 === RUN   TestFrontendAssetsAndFinanceRefundExport
---- PASS: TestFrontendAssetsAndFinanceRefundExport (1.74s)
+--- PASS: TestFrontendAssetsAndFinanceRefundExport (1.46s)
 === RUN   TestFinanceShiftPolicyValidation
---- PASS: TestFinanceShiftPolicyValidation (1.51s)
+--- PASS: TestFinanceShiftPolicyValidation (1.54s)
 === RUN   TestCareSchedulingGovernanceFlows
---- PASS: TestCareSchedulingGovernanceFlows (1.76s)
+--- PASS: TestCareSchedulingGovernanceFlows (1.63s)
 === RUN   TestRateLimiterBlocksBruteForceLogin
---- PASS: TestRateLimiterBlocksBruteForceLogin (1.17s)
+--- PASS: TestRateLimiterBlocksBruteForceLogin (0.99s)
 === RUN   TestCSRFEnforcementOnUIFormSubmission
---- PASS: TestCSRFEnforcementOnUIFormSubmission (1.32s)
+--- PASS: TestCSRFEnforcementOnUIFormSubmission (1.34s)
+=== RUN   TestAllPanelsRenderSuccessfully
+    api_functional_test.go:826: OK /ui/panels/overview status=200 len=645
+    api_functional_test.go:826: OK /ui/panels/occupancy status=200 len=1632
+    api_functional_test.go:826: OK /ui/panels/exercises status=200 len=1453
+    api_functional_test.go:826: OK /ui/panels/scheduling status=200 len=1784
+    api_functional_test.go:826: OK /ui/panels/finance status=200 len=2039
+    api_functional_test.go:826: OK /ui/panels/reports status=200 len=1847
+    api_functional_test.go:826: OK /ui/panels/care status=200 len=1578
+--- PASS: TestAllPanelsRenderSuccessfully (1.68s)
 PASS
-ok  	clinic-admin-suite/API_tests	14.719s
+ok  	clinic-admin-suite/API_tests	15.472s
