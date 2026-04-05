@@ -3,8 +3,20 @@ services:
     build: .
     ports:
       - "8080:8080"
-    env_file:
-      - .env
+    environment:
+      APP_ADDR: ":8080"
+      APP_DB_PATH: "/data/clinic.db"
+      APP_MEDIA_ROOT: "/data/media"
+      APP_STRUCTURED_LOG_PATH: "/data/logs/structured.log"
+      APP_DIAGNOSTICS_ROOT: "/data/diagnostics"
+      APP_REPORTS_SHARED_ROOT: "/data/shared_reports"
+      SESSION_COOKIE_NAME: "clinic_session"
+      SESSION_TTL: "15m"
+      SESSION_COOKIE_SECURE: "true"
+      BCRYPT_COST: "12"
+      BOOTSTRAP_ADMIN_USERNAME: "admin"
+      BOOTSTRAP_ADMIN_PASSWORD: "ChangeMe123!@#"
+      APP_MASTER_KEY_B64: "MVo+6leW8zc0pnZrFWEEC86VQIN5WQVlvVOB8sjPa4E="
     volumes:
       - clinic_data:/data
       - clinic_media:/data/media

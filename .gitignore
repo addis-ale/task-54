@@ -81,7 +81,6 @@ Desktop.ini
 
 # ---- Environment & Config Overrides ----
 # .env
-.env.local
 .env.*.local
 config.local.yaml
 config.local.json
@@ -99,3 +98,4 @@ diagnostics_*.zip
 /convert_ai_session.py
 /session-1.json
 /session-2.jsonl
+config.bat
