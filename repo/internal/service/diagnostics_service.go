@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"clinic-admin-suite/internal/domain"
 )
 
 type DiagnosticsService struct {
@@ -34,6 +36,10 @@ type DiagnosticsExport struct {
 }
 
 func (s *DiagnosticsService) Export(ctx context.Context) (*DiagnosticsExport, error) {
+	// Defense-in-depth: verify caller has diagnostics.export permission at service layer
+	if err := RequireCallerPermission(ctx, domain.PermissionDiagnosticsExport); err != nil {
+		return nil, fmt.Errorf("%w: diagnostics.export permission required", ErrForbidden)
+	}
 	if s.outputRoot == "" {
 		s.outputRoot = filepath.Join(".", "data", "diagnostics")
 	}
@@ -70,6 +76,11 @@ func (s *DiagnosticsService) Export(ctx context.Context) (*DiagnosticsExport, er
 	}
 
 	if err := s.addRecentJobResults(ctx, zipWriter); err != nil {
+		zipWriter.Close()
+		return nil, err
+	}
+
+	if err := s.addConfigSnapshots(ctx, zipWriter); err != nil {
 		zipWriter.Close()
 		return nil, err
 	}
@@ -315,6 +326,60 @@ func (s *DiagnosticsService) addRecentJobResults(ctx context.Context, zipWriter 
 
 	if _, err := entry.Write(raw); err != nil {
 		return fmt.Errorf("write job runs payload to diagnostics bundle: %w", err)
+	}
+
+	return nil
+}
+
+func (s *DiagnosticsService) addConfigSnapshots(ctx context.Context, zipWriter *zip.Writer) error {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, config_key, config_payload_json, created_by, created_at, is_active FROM config_versions ORDER BY created_at DESC LIMIT 50`)
+	if err != nil {
+		// config_versions table might not have data yet — write empty snapshot
+		entry, createErr := zipWriter.Create("config/snapshots.json")
+		if createErr != nil {
+			return fmt.Errorf("create config entry in diagnostics bundle: %w", createErr)
+		}
+		_, _ = entry.Write([]byte(`{"config_versions":[],"note":"query error: ` + err.Error() + `"}`))
+		return nil
+	}
+	defer rows.Close()
+
+	type configRow struct {
+		ID         int64   `json:"id"`
+		ConfigKey  string  `json:"config_key"`
+		Payload    string  `json:"payload_json"`
+		CreatedBy  *int64  `json:"created_by,omitempty"`
+		CreatedAt  int64   `json:"created_at"`
+		IsActive   int     `json:"is_active"`
+	}
+	items := make([]configRow, 0)
+	for rows.Next() {
+		var item configRow
+		var createdBy sql.NullInt64
+		if err := rows.Scan(&item.ID, &item.ConfigKey, &item.Payload, &createdBy, &item.CreatedAt, &item.IsActive); err != nil {
+			return fmt.Errorf("scan config version row: %w", err)
+		}
+		if createdBy.Valid {
+			item.CreatedBy = &createdBy.Int64
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate config version rows: %w", err)
+	}
+
+	entry, err := zipWriter.Create("config/snapshots.json")
+	if err != nil {
+		return fmt.Errorf("create config entry in diagnostics bundle: %w", err)
+	}
+
+	raw, err := json.MarshalIndent(map[string]any{"config_versions": items}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config snapshots payload: %w", err)
+	}
+
+	if _, err := entry.Write(raw); err != nil {
+		return fmt.Errorf("write config snapshots to diagnostics bundle: %w", err)
 	}
 
 	return nil

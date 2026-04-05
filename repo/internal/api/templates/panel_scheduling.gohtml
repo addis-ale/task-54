@@ -30,7 +30,10 @@
     var form = new FormData();
     form.append('start_at', startISO);
     form.append('end_at', endISO);
+    var csrfMatch = document.cookie.match(/(?:^|;\s*)clinic_csrf=([^;]*)/);
+    var csrf = csrfMatch ? csrfMatch[1] : '';
     var headers = {'Idempotency-Key': 'drag:' + draftId + ':' + Date.now()};
+    if (csrf) { headers['X-CSRF-Token'] = csrf; }
     fetch('/ui/scheduling/drafts/' + draftId + '/adjust', {method:'POST', body:form, credentials:'include', headers:headers})
       .then(function(r){ return r.text(); })
       .then(function(html){ document.getElementById('panel').innerHTML = html; });

@@ -26,5 +26,8 @@ Thumbs.db
 e2e/node_modules/
 e2e/test-results/
 
+# Test output
+test_reports/
+
 # Temporary
 .tmp/

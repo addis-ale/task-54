@@ -1,0 +1,35 @@
+<section class="view active">
+<button hx-get="/ui/panels/exercises" hx-target="#panel" style="margin-bottom:1rem">&larr; Back to Exercise Library</button>
+<article class="card">
+  <h2>{{.Exercise.Title}}</h2>
+  <div class="grid two">
+    <div>
+      <p><strong>Difficulty:</strong> {{.Exercise.Difficulty}}</p>
+      {{if .Exercise.Description}}<p><strong>Description:</strong> {{.Exercise.Description}}</p>{{end}}
+      {{if .Exercise.CoachingPoints}}<p><strong>Coaching Points:</strong> {{.Exercise.CoachingPoints}}</p>{{end}}
+      {{if .Exercise.SearchText}}<p class="hint">{{.Exercise.SearchText}}</p>{{end}}
+    </div>
+    <div>
+      <p><strong>Version:</strong> {{.Exercise.Version}}</p>
+      <button class="{{if .Favored}}favorite{{end}}" hx-post="/ui/exercises/{{.Exercise.ID}}/favorite" hx-target="#panel">{{if .Favored}}Favorited{{else}}Add Favorite{{end}}</button>
+    </div>
+  </div>
+</article>
+{{if .BodyRegions}}<article class="card"><h3>Body Regions</h3><p>{{range .BodyRegions}}<span class="hint" style="margin-right:.5rem">{{.Name}}</span>{{end}}</p></article>{{end}}
+{{if .Contraindications}}<article class="card"><h3>Contraindications</h3><p>{{range .Contraindications}}<span class="hint" style="margin-right:.5rem">{{.Label}}</span>{{end}}</p></article>{{end}}
+<article class="card">
+  <h3>Media ({{len .Media}} files)</h3>
+  {{if not .Media}}<p class="hint">No media attached. Upload media from the exercise library panel.</p>{{end}}
+  {{range .Media}}
+  <div class="exercise-row">
+    <div>
+      <strong>{{.MediaType}}</strong> &mdash; {{.OriginalName}}
+      <div class="hint">Size: {{.SizeBytes}} bytes &middot; Checksum: {{.Checksum}}</div>
+    </div>
+    <div>
+      <a href="/api/v1/media/{{.ID}}/stream" target="_blank">View / Download</a>
+    </div>
+  </div>
+  {{end}}
+</article>
+</section>

@@ -122,8 +122,46 @@ func (s *AuditService) logEvent(ctx context.Context, tx *sql.Tx, input AuditLogI
 	return nil
 }
 
+// sensitiveFieldKeys lists field names that must be redacted in audit log entries.
+var sensitiveFieldKeys = map[string]bool{
+	"password":          true,
+	"password_hash":     true,
+	"token":             true,
+	"session_token":     true,
+	"payer_reference":   true,
+	"card_number":       true,
+	"master_key":        true,
+	"secret":            true,
+	"encrypted_ref":     true,
+	"app_master_key_b64": true,
+}
+
+func redactSensitiveFields(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(val))
+		for k, child := range val {
+			if sensitiveFieldKeys[strings.ToLower(k)] {
+				out[k] = "***REDACTED***"
+			} else {
+				out[k] = redactSensitiveFields(child)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, child := range val {
+			out[i] = redactSensitiveFields(child)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
 func marshalAuditState(payload map[string]any) (*string, error) {
-	raw, err := json.Marshal(payload)
+	redacted := redactSensitiveFields(payload)
+	raw, err := json.Marshal(redacted)
 	if err != nil {
 		return nil, fmt.Errorf("marshal audit payload: %w", err)
 	}

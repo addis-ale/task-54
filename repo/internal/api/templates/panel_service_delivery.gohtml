@@ -1,6 +1,7 @@
 <section class="view active"><h2>Service Delivery — Resident #{{.PatientID}}</h2>
 <button hx-get="/ui/panels/occupancy" hx-target="#panel" style="margin-bottom:1rem">&larr; Back to Occupancy</button>
-<article class="card"><h3>Facility KPIs</h3><pre class="output">on_time_pct: {{printf "%.1f" .OnTimePct}}%
-open_work_orders: {{.OpenWorkOrders}}</pre><p class="hint">On-time: started within 15 minutes of scheduled start.</p></article>
+<article class="card"><h3>Facility KPIs</h3><pre class="output">execution_rate: {{printf "%.1f" .ExecutionRate}}%
+on_time_pct: {{printf "%.1f" .OnTimePct}}%
+open_work_orders: {{.OpenWorkOrders}}</pre><p class="hint">Execution rate: completed / total work orders. On-time: completed within 15 minutes of scheduled start.</p></article>
 <article class="card"><h3>Care-Quality Checkpoints</h3>{{if not .Checkpoints}}<p>No checkpoints recorded for this resident.</p>{{else}}<table style="width:100%;font-size:.85rem"><tr><th>Type</th><th>Status</th><th>Notes</th><th>Recorded</th></tr>{{range .Checkpoints}}<tr><td>{{.CheckpointType}}</td><td>{{.Status}}</td><td>{{.Notes}}</td><td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td></tr>{{end}}</table>{{end}}</article>
 <article class="card"><h3>Alert Events</h3>{{if not .Alerts}}<p>No alerts recorded for this resident.</p>{{else}}<table style="width:100%;font-size:.85rem"><tr><th>Type</th><th>Severity</th><th>State</th><th>Message</th></tr>{{range .Alerts}}<tr><td>{{.AlertType}}</td><td>{{.Severity}}</td><td>{{.State}}</td><td>{{.Message}}</td></tr>{{end}}</table>{{end}}</article></section>

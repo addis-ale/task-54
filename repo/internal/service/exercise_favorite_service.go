@@ -34,6 +34,18 @@ func (s *ExerciseFavoriteService) Toggle(ctx context.Context, userID, exerciseID
 	return true, nil
 }
 
+func (s *ExerciseFavoriteService) IsFavorite(ctx context.Context, userID, exerciseID int64) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx, `SELECT 1 FROM exercise_favorites WHERE user_id = ? AND exercise_id = ?`, userID, exerciseID).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check exercise favorite: %w", err)
+	}
+	return true, nil
+}
+
 func (s *ExerciseFavoriteService) ListIDs(ctx context.Context, userID int64) (map[int64]struct{}, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT exercise_id FROM exercise_favorites WHERE user_id = ?`, userID)
 	if err != nil {

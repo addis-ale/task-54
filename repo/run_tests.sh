@@ -11,16 +11,21 @@ TOTAL_PASSES=0
 TOTAL_FAILURES=0
 SUITE_FAILURES=0
 
-# Build the tester image from the tester stage in the Dockerfile.
-# This ensures tests run with the same Go version used to build the app.
-echo "Building test image..."
-TESTER_IMAGE="clinic-test-runner"
-if ! docker build --target tester -t "${TESTER_IMAGE}" -q "${ROOT_DIR}" > /dev/null 2>&1; then
-  echo "ERROR: Failed to build test image. Attempting verbose build..."
-  docker build --target tester -t "${TESTER_IMAGE}" "${ROOT_DIR}"
-  exit 1
+USE_DOCKER=false
+
+# Attempt Docker build; fall back to native Go if Docker is unavailable.
+if command -v docker &> /dev/null; then
+  echo "Building test image..."
+  TESTER_IMAGE="clinic-test-runner"
+  if docker build --target tester -t "${TESTER_IMAGE}" -q "${ROOT_DIR}" > /dev/null 2>&1; then
+    echo "Test image ready."
+    USE_DOCKER=true
+  else
+    echo "Docker build failed, falling back to native Go test runner."
+  fi
+else
+  echo "Docker not found, using native Go test runner."
 fi
-echo "Test image ready."
 
 run_suite() {
   local suite_name="$1"
@@ -33,19 +38,27 @@ run_suite() {
   echo "Log: ${log_file}"
   echo "============================================================"
 
-  if docker run --rm "${TESTER_IMAGE}" "${pkg_pattern}" 2>&1 | tee "${log_file}"; then
-    suite_exit=0
+  if [[ "${USE_DOCKER}" == "true" ]]; then
+    if docker run --rm "${TESTER_IMAGE}" "${pkg_pattern}" 2>&1 | tee "${log_file}"; then
+      suite_exit=0
+    else
+      suite_exit=$?
+    fi
   else
-    suite_exit=$?
+    if (cd "${ROOT_DIR}" && go test "${pkg_pattern}" -v -count=1) 2>&1 | tee "${log_file}"; then
+      suite_exit=0
+    else
+      suite_exit=$?
+    fi
   fi
 
   local suite_total
   local suite_pass
   local suite_fail
 
-  suite_total=$(grep -E "^--- (PASS|FAIL):" "${log_file}" | wc -l | tr -d ' ' || true)
-  suite_pass=$(grep -E "^--- PASS:" "${log_file}" | wc -l | tr -d ' ' || true)
-  suite_fail=$(grep -E "^--- FAIL:" "${log_file}" | wc -l | tr -d ' ' || true)
+  suite_total=$(grep -cE "^--- (PASS|FAIL):" "${log_file}" || true)
+  suite_pass=$(grep -cE "^--- PASS:" "${log_file}" || true)
+  suite_fail=$(grep -cE "^--- FAIL:" "${log_file}" || true)
 
   TOTAL_TESTS=$((TOTAL_TESTS + suite_total))
   TOTAL_PASSES=$((TOTAL_PASSES + suite_pass))

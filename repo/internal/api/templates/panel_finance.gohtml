@@ -1,2 +1,72 @@
-<section class="view active"><div class="grid two"><article class="card"><h3>Create Payment</h3><form class="stack-form" hx-post="/ui/finance/payments" hx-target="#panel"><label>Method<input name="method" value="cash"></label><label>Gateway<select name="gateway"><option>cash_local</option><option>check_local</option><option>facility_charge_local</option><option>imported_card_batch_local</option><option>card_local</option></select></label><label>Amount Cents<input type="number" name="amount_cents" required></label><label>Currency<input name="currency" value="USD"></label><label>Shift ID<select name="shift_id"><option value="shift-0700">07:00 close</option><option value="shift-1500">15:00 close</option><option value="shift-2300">23:00 close</option></select></label><button type="submit">Capture Payment</button></form></article><article class="card"><h3>Issue Refund</h3><form class="stack-form" hx-post="/ui/finance/refunds" hx-target="#panel"><label>Payment<select name="payment_id" required>{{range .Payments}}{{if eq .Status "succeeded"}}<option value="{{.ID}}">#{{.ID}} {{.Method}} {{.AmountCents}}¢ ({{.Gateway}})</option>{{end}}{{end}}</select></label><label>Amount Cents<input type="number" name="amount_cents" required></label><label>Reason<input name="reason" value="patient_adjustment" required></label><button type="submit">Submit Refund</button></form></article></div><div class="grid two"><article class="card"><h3>Run Settlement</h3><form class="stack-form" hx-post="/ui/finance/settlements" hx-target="#panel"><label>Shift ID<select name="shift_id"><option value="shift-0700">07:00 close</option><option value="shift-1500">15:00 close</option><option value="shift-2300">23:00 close</option></select></label><label>Actual Total Cents<input type="number" name="actual_total_cents" required></label><button type="submit">Run</button></form></article><article class="card"><h3>On-Demand Export</h3><div class="row"><a href="/api/v1/reports/finance/export?format=csv">Finance CSV</a><a href="/api/v1/reports/finance/export?format=xlsx">Finance XLSX</a></div></article></div><article class="card"><h3>Recent Payments</h3><pre class="output">{{range .Payments}}id={{.ID}} status={{.Status}} method={{.Method}} gateway={{.Gateway}} amount={{.AmountCents}} shift={{.ShiftID}}
-{{end}}</pre></article></section>
+<section class="view active">
+  <div class="grid two">
+    <article class="card">
+      <h3>Create Payment</h3>
+      <form class="stack-form" hx-post="/ui/finance/payments" hx-target="#panel">
+        <label>Method<input name="method" value="cash"></label>
+        <label>Gateway
+          <select name="gateway">
+            <option>cash_local</option>
+            <option>check_local</option>
+            <option>facility_charge_local</option>
+            <option>imported_card_batch_local</option>
+            <option>card_local</option>
+          </select>
+        </label>
+        <label>Amount Cents<input type="number" name="amount_cents" required></label>
+        <label>Currency<input name="currency" value="USD"></label>
+        <label>Shift ID
+          <select name="shift_id">
+            <option value="shift-0700">07:00 close</option>
+            <option value="shift-1500">15:00 close</option>
+            <option value="shift-2300">23:00 close</option>
+          </select>
+        </label>
+        <button type="submit">Capture Payment</button>
+      </form>
+    </article>
+    <article class="card">
+      <h3>Issue Refund</h3>
+      <form class="stack-form" hx-post="/ui/finance/refunds" hx-target="#panel">
+        <label>Payment
+          <select name="payment_id" required>
+            {{range .Payments}}{{if eq .Status "succeeded"}}
+            <option value="{{.ID}}">#{{.ID}} {{.Method}} {{.AmountCents}}¢ ({{.Gateway}})</option>
+            {{end}}{{end}}
+          </select>
+        </label>
+        <label>Amount Cents<input type="number" name="amount_cents" required></label>
+        <label>Reason<input name="reason" value="patient_adjustment" required></label>
+        <button type="submit">Submit Refund</button>
+      </form>
+    </article>
+  </div>
+  <div class="grid two">
+    <article class="card">
+      <h3>Run Settlement</h3>
+      <form class="stack-form" hx-post="/ui/finance/settlements" hx-target="#panel">
+        <label>Shift ID
+          <select name="shift_id">
+            <option value="shift-0700">07:00 close</option>
+            <option value="shift-1500">15:00 close</option>
+            <option value="shift-2300">23:00 close</option>
+          </select>
+        </label>
+        <label>Actual Total Cents<input type="number" name="actual_total_cents" required></label>
+        <button type="submit">Run</button>
+      </form>
+    </article>
+    <article class="card">
+      <h3>On-Demand Export</h3>
+      <div class="row">
+        <form method="post" action="/api/v1/reports/finance/export?format=csv" style="display:inline"><input type="hidden" name="format" value="csv"><button type="submit">Finance CSV</button></form>
+        <form method="post" action="/api/v1/reports/finance/export?format=xlsx" style="display:inline"><input type="hidden" name="format" value="xlsx"><button type="submit">Finance XLSX</button></form>
+      </div>
+    </article>
+  </div>
+  <article class="card">
+    <h3>Recent Payments</h3>
+    <pre class="output">{{range .Payments}}id={{.ID}} status={{.Status}} method={{.Method}} gateway={{.Gateway}} amount={{.AmountCents}} shift={{.ShiftID}}
+{{end}}</pre>
+  </article>
+</section>

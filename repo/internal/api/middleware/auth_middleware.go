@@ -45,6 +45,7 @@ func RequireAuth(authService *service.AuthService, cookieName string) fiber.Hand
 		enriched := service.WithAuditContext(c.UserContext(), service.AuditContext{
 			OperatorID:       &authContext.User.ID,
 			OperatorUsername: authContext.User.Username,
+			OperatorRole:     authContext.User.Role,
 			LocalIP:          c.IP(),
 			RequestID:        httpx.RequestID(c),
 		})

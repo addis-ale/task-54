@@ -13,7 +13,7 @@ import (
 )
 
 func TestSettlementServiceMatchedAndDiscrepancyFlows(t *testing.T) {
-	ctx := context.Background()
+	ctx := adminCtx()
 	db := setupTestDB(t)
 
 	paymentsRepo := sqlite.NewPaymentRepository(db)
@@ -49,7 +49,7 @@ func TestSettlementServiceMatchedAndDiscrepancyFlows(t *testing.T) {
 }
 
 func TestSettlementServiceValidationErrors(t *testing.T) {
-	ctx := context.Background()
+	ctx := adminCtx()
 	db := setupTestDB(t)
 
 	settlementSvc := service.NewSettlementService(

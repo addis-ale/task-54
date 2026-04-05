@@ -74,6 +74,10 @@ type RefundPaymentInput struct {
 }
 
 func (s *PaymentService) Create(ctx context.Context, input CreatePaymentInput) (*domain.Payment, error) {
+	// Defense-in-depth: verify caller has payments.write permission at service layer
+	if err := RequireCallerPermission(ctx, domain.PermissionPaymentsWrite); err != nil {
+		return nil, fmt.Errorf("%w: payments.write permission required", ErrForbidden)
+	}
 	method := strings.TrimSpace(strings.ToLower(input.Method))
 	if method == "" {
 		return nil, fmt.Errorf("%w: payment method is required", ErrValidation)

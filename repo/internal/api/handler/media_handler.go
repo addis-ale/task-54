@@ -67,6 +67,37 @@ func (h *MediaHandler) Upload(c *fiber.Ctx) error {
 	return httpx.OK(c, fiber.StatusCreated, fiber.Map{"media": asset})
 }
 
+func (h *MediaHandler) UploadAndRedirect(c *fiber.Ctx) error {
+	exerciseID, err := strconv.ParseInt(strings.TrimSpace(c.FormValue("exercise_id")), 10, 64)
+	if err != nil || exerciseID <= 0 {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: exercise_id must be a positive integer</div>`)
+	}
+	mediaType := strings.TrimSpace(c.FormValue("media_type"))
+	if mediaType == "" {
+		mediaType = "image"
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil || fileHeader == nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: file is required</div>`)
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString(`<div class="card">Failed to read uploaded file</div>`)
+	}
+	defer file.Close()
+	_, err = h.media.Ingest(c.UserContext(), service.IngestMediaInput{
+		ExerciseID: exerciseID,
+		MediaType:  mediaType,
+		Filename:   fileHeader.Filename,
+		Variant:    "original",
+		Reader:     file,
+	})
+	if err != nil {
+		return c.Status(fiber.StatusUnprocessableEntity).SendString(`<div class="card">Failed: ` + err.Error() + `</div>`)
+	}
+	return c.SendString(`<div class="card" style="border-left:4px solid var(--accent)">Media uploaded for exercise #` + strconv.FormatInt(exerciseID, 10) + `</div>`)
+}
+
 func (h *MediaHandler) Get(c *fiber.Ctx) error {
 	mediaID, err := strconv.ParseInt(c.Params("media_id"), 10, 64)
 	if err != nil || mediaID <= 0 {

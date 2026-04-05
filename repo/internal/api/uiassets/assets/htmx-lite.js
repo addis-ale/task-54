@@ -61,11 +61,31 @@
       })
       .then(function (res) {
         if (res.status === 409) {
-          swapTarget(targetSelector, "<div class='card' style='border-left:4px solid var(--warn,#b04f2d);padding:1rem'><h4>Record Changed</h4><p>This record was modified by another user. The latest version has been reloaded.</p><button onclick=\"this.closest('.card').remove()\" style='margin-top:.5rem'>Dismiss</button></div>" + res.text, swapMode);
-          bindAll();
+          // Show conflict banner then reload the current panel to get latest state
+          var banner = "<div class='card' style='border-left:4px solid var(--warn,#b04f2d);padding:1rem;margin-bottom:1rem'><h4>Record Changed</h4><p>This record was modified by another user. The latest version has been reloaded below.</p><button onclick=\"this.closest('.card').remove()\" style='margin-top:.5rem'>Dismiss</button></div>";
+          var activeNav = document.querySelector('.top-nav button[data-active]');
+          var reloadUrl = activeNav ? activeNav.getAttribute('hx-get') : null;
+          if (reloadUrl) {
+            // Fetch latest panel state and show it with the conflict banner
+            fetch(reloadUrl, { method: 'GET', credentials: 'include', headers: { 'HX-Request': 'true' } })
+              .then(function (r) { return r.text(); })
+              .then(function (freshHtml) {
+                swapTarget(targetSelector, banner + freshHtml, swapMode);
+                bindAll();
+              })
+              .catch(function () {
+                swapTarget(targetSelector, banner + res.text, swapMode);
+                bindAll();
+              });
+          } else {
+            // Fallback: show response body (server-rendered latest state on conflict)
+            swapTarget(targetSelector, banner + res.text, swapMode);
+            bindAll();
+          }
           return;
         }
         if (res.status === 401) { window.location.href = "/login"; return; }
+        autoCacheExerciseContent(url, res.text);
         swapTarget(targetSelector, res.text, swapMode);
         bindAll();
       })
@@ -82,6 +102,8 @@
   }
 
   function submitForm(form) {
+    if (form.dataset.htmxInflight === "1") { return; }
+    form.dataset.htmxInflight = "1";
     var url =
       form.getAttribute("hx-post") ||
       form.getAttribute("action") ||
@@ -95,16 +117,63 @@
     var button = form.querySelector("button[type='submit']");
     if (button) {
       button.disabled = true;
-      button.dataset.originalText = button.textContent;
+      button.dataset.originalText = button.dataset.originalText || button.textContent;
       button.textContent = "Submitting...";
     }
-    request(method, url, target, swap, body);
-    if (button) {
-      setTimeout(function () {
-        button.disabled = false;
-        button.textContent = button.dataset.originalText || "Submit";
-      }, 800);
+
+    var headers = { "HX-Request": "true" };
+    if (!form.dataset.htmxIdemKey) {
+      form.dataset.htmxIdemKey = idempotencyKey(url);
     }
+    headers["Idempotency-Key"] = form.dataset.htmxIdemKey;
+    var csrf = getCSRFToken();
+    if (csrf) { headers["X-CSRF-Token"] = csrf; }
+
+    showIndicator(true);
+    fetch(url, { method: method, credentials: "include", headers: headers, body: body })
+      .then(function (res) {
+        return res.text().then(function (text) {
+          return { status: res.status, text: text };
+        });
+      })
+      .then(function (res) {
+        delete form.dataset.htmxIdemKey;
+        if (res.status === 409) {
+          var banner = "<div class='card' style='border-left:4px solid var(--warn,#b04f2d);padding:1rem;margin-bottom:1rem'><h4>Record Changed</h4><p>This record was modified by another user. The latest version has been reloaded below.</p><button onclick=\"this.closest('.card').remove()\" style='margin-top:.5rem'>Dismiss</button></div>";
+          var activeNav = document.querySelector('.top-nav button[data-active]');
+          var reloadUrl = activeNav ? activeNav.getAttribute('hx-get') : null;
+          if (reloadUrl) {
+            fetch(reloadUrl, { method: 'GET', credentials: 'include', headers: { 'HX-Request': 'true' } })
+              .then(function (r) { return r.text(); })
+              .then(function (freshHtml) {
+                swapTarget(target, banner + freshHtml, swap);
+                bindAll();
+              })
+              .catch(function () {
+                swapTarget(target, banner + res.text, swap);
+                bindAll();
+              });
+          } else {
+            swapTarget(target, banner + res.text, swap);
+            bindAll();
+          }
+          return;
+        }
+        if (res.status === 401) { window.location.href = "/login"; return; }
+        swapTarget(target, res.text, swap);
+        bindAll();
+      })
+      .catch(function () {
+        swapTarget(target, "<div class='card'>Request failed</div>", swap);
+      })
+      .finally(function () {
+        showIndicator(false);
+        form.dataset.htmxInflight = "0";
+        if (button) {
+          button.disabled = false;
+          button.textContent = button.dataset.originalText || "Submit";
+        }
+      });
   }
 
   function bindAll() {
@@ -162,15 +231,144 @@
   }
 
   window.clearClinicDeviceCache = function () {
+    // Clear localStorage cache items
     Object.keys(localStorage).forEach(function (key) {
       if (key.indexOf("clinic:lru:") === 0) {
         localStorage.removeItem(key);
       }
     });
-    if (window.clinicCache && typeof window.clinicCache.render === "function") {
-      window.clinicCache.render();
+    // Clear IndexedDB cache (clinic_lru_cache database)
+    if (window.clinicCache && typeof window.clinicCache.clearAll === "function") {
+      window.clinicCache.clearAll();
+    } else {
+      try {
+        var delReq = indexedDB.deleteDatabase("clinic_lru_cache");
+        delReq.onsuccess = function () {};
+        delReq.onerror = function () {};
+      } catch (e) {}
     }
   };
+
+  // ---- Lightweight IndexedDB LRU cache (initialized at app boot) ----
+  (function initClinicCache() {
+    var DB_NAME = "clinic_lru_cache";
+    var STORE = "cache_items";
+    var MAX_BYTES = 2 * 1024 * 1024 * 1024;
+    var MAX_ITEMS = 200;
+
+    function openDB() {
+      return new Promise(function (resolve, reject) {
+        var req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = function (e) {
+          var db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE)) {
+            var s = db.createObjectStore(STORE, { keyPath: "key" });
+            s.createIndex("last_accessed_at", "last_accessed_at", { unique: false });
+          }
+        };
+        req.onsuccess = function (e) { resolve(e.target.result); };
+        req.onerror = function (e) { reject(e.target.error); };
+      });
+    }
+
+    function all(db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, "readonly");
+        var r = tx.objectStore(STORE).getAll();
+        r.onsuccess = function () { resolve(r.result || []); };
+        r.onerror = function () { reject(r.error); };
+      });
+    }
+
+    function putDB(db, item) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).put(item);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    }
+
+    function delDB(db, key) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).delete(key);
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    }
+
+    function clearDB(db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE, "readwrite");
+        tx.objectStore(STORE).clear();
+        tx.oncomplete = function () { resolve(); };
+        tx.onerror = function () { reject(tx.error); };
+      });
+    }
+
+    async function evict(db) {
+      var items = await all(db);
+      var total = items.reduce(function (s, i) { return s + (i.size_bytes || 0); }, 0);
+      if (items.length <= MAX_ITEMS && total <= MAX_BYTES) return;
+      items.sort(function (a, b) { return new Date(a.last_accessed_at || 0) - new Date(b.last_accessed_at || 0); });
+      while (items.length > MAX_ITEMS || total > MAX_BYTES) {
+        var v = items.shift();
+        if (!v) break;
+        total -= v.size_bytes || 0;
+        await delDB(db, v.key);
+      }
+    }
+
+    if (!window.clinicCache) {
+      window.clinicCache = {
+        put: async function (key, sizeBytes, hash, data) {
+          var db = await openDB();
+          await putDB(db, { key: key, size_bytes: sizeBytes, content_hash: hash, data: data || null, created_at: new Date().toISOString(), last_accessed_at: new Date().toISOString() });
+          await evict(db);
+        },
+        get: async function (key) {
+          var db = await openDB();
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(STORE, "readwrite");
+            var r = tx.objectStore(STORE).get(key);
+            r.onsuccess = function () {
+              var item = r.result;
+              if (!item) { resolve(null); return; }
+              item.last_accessed_at = new Date().toISOString();
+              tx.objectStore(STORE).put(item);
+              resolve(item);
+            };
+            r.onerror = function () { reject(r.error); };
+          });
+        },
+        clearAll: async function () {
+          var db = await openDB();
+          await clearDB(db);
+        },
+        render: function () {}
+      };
+    }
+  })();
+
+  // Auto-cache recently viewed exercise content when navigating to exercise details or media
+  function autoCacheExerciseContent(url, html) {
+    if (!window.clinicCache || typeof window.clinicCache.put !== "function") return;
+    var exerciseMatch = url.match(/\/exercises\/(\d+)/);
+    var mediaMatch = url.match(/\/media\/(\d+)/);
+    if (exerciseMatch) {
+      var key = "exercise:" + exerciseMatch[1] + ":detail";
+      var size = new Blob([html]).size;
+      var hash = "sha256_" + Date.now();
+      window.clinicCache.put(key, size, hash, html);
+    }
+    if (mediaMatch) {
+      var mKey = "media:" + mediaMatch[1] + ":stream";
+      var mSize = new Blob([html]).size;
+      var mHash = "sha256_" + Date.now();
+      window.clinicCache.put(mKey, mSize, mHash, html);
+    }
+  }
 
   bindAll();
 })();

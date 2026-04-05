@@ -278,8 +278,10 @@ func TestFrontendAssetsAndFinanceRefundExport(t *testing.T) {
 		t.Fatalf("refund payment failed status=%d body=%s", refundRes.status, string(refundRes.body))
 	}
 
-	csvReq := httptest.NewRequest(http.MethodGet, "/api/v1/reports/finance/export?format=csv", nil)
+	csvReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/finance/export?format=csv", nil)
 	csvReq.Header.Set("Cookie", adminCookie)
+	csvReq.Header.Set("Content-Type", "application/json")
+	csvReq.Header.Set("Idempotency-Key", "csv-export-"+strconv.FormatInt(time.Now().UnixNano(), 10))
 	csvRes, err := env.app.Test(csvReq, -1)
 	if err != nil {
 		t.Fatalf("finance csv export request failed: %v", err)
@@ -296,8 +298,10 @@ func TestFrontendAssetsAndFinanceRefundExport(t *testing.T) {
 		t.Fatalf("csv payload missing header")
 	}
 
-	xlsxReq := httptest.NewRequest(http.MethodGet, "/api/v1/reports/finance/export?format=xlsx", nil)
+	xlsxReq := httptest.NewRequest(http.MethodPost, "/api/v1/reports/finance/export?format=xlsx", nil)
 	xlsxReq.Header.Set("Cookie", adminCookie)
+	xlsxReq.Header.Set("Content-Type", "application/json")
+	xlsxReq.Header.Set("Idempotency-Key", "xlsx-export-"+strconv.FormatInt(time.Now().UnixNano(), 10))
 	xlsxRes, err := env.app.Test(xlsxReq, -1)
 	if err != nil {
 		t.Fatalf("finance xlsx export request failed: %v", err)

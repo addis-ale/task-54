@@ -3,6 +3,7 @@ package handler
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"clinic-admin-suite/internal/api/httpx"
 	"clinic-admin-suite/internal/api/middleware"
@@ -21,9 +22,11 @@ func NewWorkOrdersHandler(workOrders *service.WorkOrderService) *WorkOrdersHandl
 }
 
 type createWorkOrderRequest struct {
-	ServiceType string `json:"service_type"`
-	Priority    string `json:"priority"`
-	AssigneeID  *int64 `json:"assignee_id"`
+	ServiceType    string  `json:"service_type"`
+	Priority       string  `json:"priority"`
+	AssigneeID     *int64  `json:"assignee_id"`
+	PatientID      *int64  `json:"patient_id"`
+	ScheduledStart *string `json:"scheduled_start"`
 }
 
 func (h *WorkOrdersHandler) List(c *fiber.Ctx) error {
@@ -55,11 +58,21 @@ func (h *WorkOrdersHandler) Create(c *fiber.Ctx) error {
 		return httpx.Error(c, fiber.StatusUnprocessableEntity, "VALIDATION_ERROR", "Invalid request payload", nil)
 	}
 
-	item, err := h.workOrders.Queue(c.UserContext(), service.QueueWorkOrderInput{
+	input := service.QueueWorkOrderInput{
 		ServiceType: req.ServiceType,
 		Priority:    req.Priority,
 		AssigneeID:  req.AssigneeID,
-	})
+		PatientID:   req.PatientID,
+	}
+	if req.ScheduledStart != nil {
+		parsed, err := time.Parse(time.RFC3339, *req.ScheduledStart)
+		if err != nil {
+			return httpx.Error(c, fiber.StatusUnprocessableEntity, "VALIDATION_ERROR", "scheduled_start must be RFC3339", nil)
+		}
+		utc := parsed.UTC()
+		input.ScheduledStart = &utc
+	}
+	item, err := h.workOrders.Queue(c.UserContext(), input)
 	if err != nil {
 		return handleServiceError(c, err, "Failed to queue work order")
 	}

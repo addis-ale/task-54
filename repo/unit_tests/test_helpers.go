@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"clinic-admin-suite/internal/domain"
 	"clinic-admin-suite/internal/repository/migrations"
 	"clinic-admin-suite/internal/repository/sqlite"
+	"clinic-admin-suite/internal/service"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -29,4 +31,14 @@ func setupTestDB(t *testing.T) *sql.DB {
 	})
 
 	return db
+}
+
+// adminCtx returns a context with admin-level AuditContext for service-layer
+// defense-in-depth checks in unit tests.
+func adminCtx() context.Context {
+	return service.WithAuditContext(context.Background(), service.AuditContext{
+		OperatorUsername: "test-admin",
+		OperatorRole:    string(domain.RoleAdmin),
+		RequestID:       "unit-test",
+	})
 }

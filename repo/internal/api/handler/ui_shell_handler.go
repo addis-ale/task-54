@@ -19,15 +19,6 @@ func (h *UIShellHandler) IndexRedirect(c *fiber.Ctx) error {
 	return c.Redirect("/app", fiber.StatusTemporaryRedirect)
 }
 
-func (h *UIShellHandler) App(c *fiber.Ctx) error {
-	body, err := uiassets.Files.ReadFile("index.html")
-	if err != nil {
-		return fiber.NewError(fiber.StatusInternalServerError, "UI shell is unavailable")
-	}
-	c.Type("html", "utf-8")
-	return c.Send(body)
-}
-
 func (h *UIShellHandler) Asset(c *fiber.Ctx) error {
 	name := strings.TrimSpace(c.Params("*"))
 	if name == "" || strings.Contains(name, "..") || strings.HasPrefix(name, "/") || strings.HasPrefix(name, "\\") {

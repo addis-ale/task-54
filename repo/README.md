@@ -40,12 +40,12 @@ A rehab and long-term care facility operations platform with server-rendered HTM
 
 ---
 
-## Getting Started with Docker
+## Getting Started (Native Go)
 
 ### Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) ≥ 24.0
-- [Docker Compose](https://docs.docker.com/compose/) ≥ 2.0
+- [Go](https://go.dev/dl/) ≥ 1.26
+- GCC / CGO-compatible C compiler (required by SQLite driver)
 
 ### 1. Configure Environment
 
@@ -57,7 +57,95 @@ cp .env.example .env
 
 Key variables (see [Environment Variables](#environment-variables) below for full reference).
 
-### 2. Build and Start
+Set at minimum (bash / macOS / Linux):
+
+```bash
+export APP_ADDR=:8080
+export APP_DB_PATH=./data/clinic.db
+export APP_MEDIA_ROOT=./data/media
+export APP_STRUCTURED_LOG_PATH=./data/logs/structured.log
+export APP_DIAGNOSTICS_ROOT=./data/diagnostics
+export APP_REPORTS_SHARED_ROOT=./data/shared_reports
+export BOOTSTRAP_ADMIN_USERNAME=admin
+export BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123!@#
+export APP_MASTER_KEY_B64=$(head -c32 /dev/urandom | base64)
+```
+
+Windows PowerShell equivalent:
+
+```powershell
+$env:APP_ADDR=":8080"
+$env:APP_DB_PATH="./data/clinic.db"
+$env:APP_MEDIA_ROOT="./data/media"
+$env:APP_STRUCTURED_LOG_PATH="./data/logs/structured.log"
+$env:APP_DIAGNOSTICS_ROOT="./data/diagnostics"
+$env:APP_REPORTS_SHARED_ROOT="./data/shared_reports"
+$env:SESSION_COOKIE_SECURE="false"
+$env:BOOTSTRAP_ADMIN_USERNAME="admin"
+$env:BOOTSTRAP_ADMIN_PASSWORD="ChangeMe123!@#"
+$env:APP_MASTER_KEY_B64=[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Max 256 }))
+```
+
+### 2. Build and Run
+
+```bash
+# bash / macOS / Linux
+mkdir -p data/media data/logs data/diagnostics data/shared_reports
+go run ./cmd/server
+```
+
+```powershell
+# Windows PowerShell
+New-Item -ItemType Directory -Force -Path data/media, data/logs, data/diagnostics, data/shared_reports
+go run ./cmd/server
+```
+
+The server will be available at **http://localhost:8080**. You can access the UI at **http://localhost:8080/app**.
+
+Migrations run automatically on startup.
+
+### 3. Run Tests (native)
+
+```bash
+go test ./unit_tests/... ./API_tests/... -v -count=1
+```
+
+Or use the test runner script (supports both Docker and native):
+
+```bash
+./run_tests.sh
+```
+
+### 4. Run E2E Tests (Playwright)
+
+Prerequisites: [Node.js](https://nodejs.org/) >= 18, Playwright browsers installed.
+
+```bash
+cd e2e
+npm install
+npx playwright install chromium
+npx playwright test
+```
+
+Set `PW_CHROMIUM_EXECUTABLE` to override the browser path if needed. The server starts automatically via `go run ./cmd/server` during e2e runs.
+
+#### Default Credentials
+On the first boot, an administrator account is automatically generated based on your `.env` configuration. If you used the provided `.env.example`, the default login is:
+- **Username**: `admin`
+- **Password**: `ChangeMe123!@#`
+
+> **Note:** It is highly recommended to change this password or set your own secure credentials in the `.env` file before deploying.
+
+---
+
+## Getting Started with Docker
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) ≥ 24.0
+- [Docker Compose](https://docs.docker.com/compose/) ≥ 2.0
+
+### 1. Build and Start
 
 ```bash
 docker compose up --build
@@ -65,20 +153,13 @@ docker compose up --build
 
 The server will be available at **http://localhost:8080**. You can access the UI at **http://localhost:8080/app**.
 
-#### Default Credentials
-On the first boot, an administrator account is automatically generated based on your `.env` configuration. If you used the provided `.env.example`, the default login is:
-- **Username**: `admin`
-- **Password**: `AdminPassword1!`
-
-> **Note:** It is highly recommended to change this password or set your own secure credentials in the `.env` file before deploying.
-
 To run in the background:
 
 ```bash
 docker compose up --build -d
 ```
 
-### 3. Seed Demo Data
+### 2. Seed Demo Data
 
 Run the seed command inside the container after the service is up:
 
@@ -88,7 +169,7 @@ docker compose exec app ./seed
 
 This seeds default wards, patients, and beds if missing.
 
-### 4. Stop the Suite
+### 3. Stop the Suite
 
 ```bash
 docker compose down

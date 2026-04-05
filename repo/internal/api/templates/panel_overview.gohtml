@@ -1,8 +1,25 @@
-<section class="view active"><div class="grid two"><article class="card"><h3>Operations Summary</h3><pre class="output">active_admissions: {{.Ops.ActiveAdmissions}}
+<section class="view active">
+  <div class="grid two">
+    <article class="card">
+      <h3>Operations Summary</h3>
+      <pre class="output">active_admissions: {{.Ops.ActiveAdmissions}}
 occupied_beds: {{.Ops.OccupiedBeds}}
 open_work_orders: {{.Ops.OpenWorkOrders}}
 payments_today_count: {{.Ops.PaymentsTodayCount}}
 payments_today_net_cents: {{.Ops.PaymentsTodayNetCents}}
-upcoming_exams_48h: {{.Ops.UpcomingExams48h}}</pre></article><article class="card"><h3>Service Delivery KPIs</h3><pre class="output">on_time_pct: {{printf "%.1f" .Ops.OnTimePct}}%</pre><p class="hint">Percentage of work orders started within 15 minutes of the scheduled start time.</p></article><article class="card"><h3>Care Quality Visibility</h3><pre class="output">checkpoint_count: {{.Care.CheckpointCount}}
+upcoming_exams_48h: {{.Ops.UpcomingExams48h}}</pre>
+    </article>
+    <article class="card">
+      <h3>Service Delivery KPIs</h3>
+      <pre class="output">execution_rate: {{printf "%.1f" .Ops.ExecutionRate}}%
+on_time_pct: {{printf "%.1f" .Ops.OnTimePct}}%</pre>
+      <p class="hint">Execution rate: completed / total work orders. On-time: completed within 15 minutes of scheduled start.</p>
+    </article>
+    <article class="card">
+      <h3>Care Quality Visibility</h3>
+      <pre class="output">checkpoint_count: {{.Care.CheckpointCount}}
 open_alerts: {{.Care.AlertOpenCount}}
-high_or_critical_open_alerts: {{.Care.AlertHighCount}}</pre></article></div></section>
+high_or_critical_open_alerts: {{.Care.AlertHighCount}}</pre>
+    </article>
+  </div>
+</section>

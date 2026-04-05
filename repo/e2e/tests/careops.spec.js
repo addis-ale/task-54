@@ -73,7 +73,7 @@ test("exercise favorite and cache clear", async ({ page }) => {
 
   const exercisePanel = await page.request.get("/ui/panels/exercises");
   const panelHTML = await exercisePanel.text();
-  expect(panelHTML).toContain("Exercise Browse and Favorites");
+  expect(panelHTML).toContain("Exercise Library");
   expect(panelHTML).toContain("Favorited");
 
   await page.goto("/app");

@@ -143,7 +143,9 @@ func (h *GovernanceHandler) RunReportSchedulesNow(c *fiber.Ctx) error {
 	if h.reports == nil {
 		return httpx.Error(c, fiber.StatusNotImplemented, "NOT_IMPLEMENTED", "Reporting service is not configured", nil)
 	}
-	if err := h.reports.RunDueSchedules(c.UserContext(), time.Now().UTC().Add(24*time.Hour)); err != nil {
+	// Force-run all schedules by using a far-future horizon, but RunDueSchedules
+	// uses real current time for next_run_at computation internally.
+	if err := h.reports.ForceRunAllSchedules(c.UserContext()); err != nil {
 		return handleServiceError(c, err, "Failed to run report schedules")
 	}
 	return httpx.OK(c, fiber.StatusOK, fiber.Map{"status": "ok"})

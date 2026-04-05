@@ -335,7 +335,7 @@ WHERE id = ? AND template_id = ?`, windowID, templateID).Scan(&window.ID, &windo
 }
 
 func (s *ExamTemplateService) ListDrafts(ctx context.Context, templateID *int64) ([]domain.ExamSessionDraft, error) {
-	query := `SELECT id, template_id, subject, room_id, proctor_id, candidate_ids_json, start_at, end_at, status, conflict_details_json, published_schedule_id, created_by, created_at, updated_at FROM exam_session_drafts WHERE 1=1`
+	query := `SELECT id, template_id, subject, room_id, proctor_id, candidate_ids_json, start_at, end_at, status, conflict_details_json, published_schedule_id, created_by, version, created_at, updated_at FROM exam_session_drafts WHERE 1=1`
 	args := make([]any, 0, 1)
 	if templateID != nil {
 		query += ` AND template_id = ?`
@@ -362,7 +362,7 @@ func (s *ExamTemplateService) ListDrafts(ctx context.Context, templateID *int64)
 			createdAtUnix int64
 			updatedAtUnix int64
 		)
-		if err := rows.Scan(&item.ID, &item.TemplateID, &item.Subject, &item.RoomID, &item.ProctorID, &candidate, &startUnix, &endUnix, &item.Status, &conflictsJSON, &published, &createdBy, &createdAtUnix, &updatedAtUnix); err != nil {
+		if err := rows.Scan(&item.ID, &item.TemplateID, &item.Subject, &item.RoomID, &item.ProctorID, &candidate, &startUnix, &endUnix, &item.Status, &conflictsJSON, &published, &createdBy, &item.Version, &createdAtUnix, &updatedAtUnix); err != nil {
 			return nil, fmt.Errorf("scan exam draft row: %w", err)
 		}
 		item.CandidateIDs = parseCandidateJSON(candidate)
@@ -417,11 +417,16 @@ func (s *ExamTemplateService) AdjustDraft(ctx context.Context, input AdjustDraft
 	conflictJSON, _ := json.Marshal(conflicts)
 
 	now := time.Now().UTC()
-	if _, err := s.db.ExecContext(ctx, `
+	result, err := s.db.ExecContext(ctx, `
 UPDATE exam_session_drafts
-SET start_at = ?, end_at = ?, conflict_details_json = ?, updated_at = ?
-WHERE id = ?`, input.StartAt.UTC().Unix(), input.EndAt.UTC().Unix(), string(conflictJSON), now.Unix(), input.DraftID); err != nil {
+SET start_at = ?, end_at = ?, conflict_details_json = ?, updated_at = ?, version = version + 1
+WHERE id = ? AND version = ?`, input.StartAt.UTC().Unix(), input.EndAt.UTC().Unix(), string(conflictJSON), now.Unix(), input.DraftID, draft.Version)
+	if err != nil {
 		return nil, fmt.Errorf("update exam session draft: %w", err)
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		return nil, fmt.Errorf("%w: draft was modified by another user", ErrVersionConflict)
 	}
 
 	if s.audit != nil {
@@ -506,10 +511,16 @@ func (s *ExamTemplateService) PublishDraft(ctx context.Context, input PublishDra
 	}
 
 	now := time.Now().UTC()
-	if _, err := s.db.ExecContext(ctx, `UPDATE exam_session_drafts SET status = 'published', updated_at = ? WHERE id = ?`, now.Unix(), input.DraftID); err != nil {
+	publishResult, err := s.db.ExecContext(ctx, `UPDATE exam_session_drafts SET status = 'published', updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'draft'`, now.Unix(), input.DraftID, draft.Version)
+	if err != nil {
 		return nil, fmt.Errorf("mark draft published: %w", err)
 	}
+	affected, _ := publishResult.RowsAffected()
+	if affected == 0 {
+		return nil, fmt.Errorf("%w: draft was modified or already published by another user", ErrVersionConflict)
+	}
 	draft.Status = "published"
+	draft.Version++
 	draft.UpdatedAt = now
 	return draft, nil
 }

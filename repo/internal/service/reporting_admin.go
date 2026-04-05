@@ -23,6 +23,10 @@ type AuditSearchFilter struct {
 }
 
 func (s *ReportService) SearchAudit(ctx context.Context, filter AuditSearchFilter) ([]domain.AuditTrailRecord, error) {
+	// Defense-in-depth: verify caller has audit.read permission at service layer
+	if err := RequireCallerPermission(ctx, domain.PermissionAuditRead); err != nil {
+		return nil, fmt.Errorf("%w: audit.read permission required", ErrForbidden)
+	}
 	if s.db == nil {
 		return nil, fmt.Errorf("%w: reporting database is not configured", ErrValidation)
 	}
@@ -324,8 +328,49 @@ func (s *ReportService) RunDueSchedules(ctx context.Context, now time.Time) erro
 			_ = s.jobRuns.Record(ctx, JobRunInput{JobType: "report_schedule", StartedAt: start, FinishedAt: finish, Status: status, Summary: summary, FailureRootCauseNotes: rootCause})
 		}
 
-		nextRun := now.UTC().Add(time.Duration(schedule.IntervalMinutes) * time.Minute)
-		if _, updateErr := s.db.ExecContext(ctx, `UPDATE report_schedules SET next_run_at = ?, updated_at = ? WHERE id = ?`, nextRun.Unix(), time.Now().UTC().Unix(), schedule.ID); updateErr != nil {
+		// Always compute next_run_at from real current time to preserve cadence
+		realNow := time.Now().UTC()
+		nextRun := realNow.Add(time.Duration(schedule.IntervalMinutes) * time.Minute)
+		if _, updateErr := s.db.ExecContext(ctx, `UPDATE report_schedules SET next_run_at = ?, updated_at = ? WHERE id = ?`, nextRun.Unix(), realNow.Unix(), schedule.ID); updateErr != nil {
+			return fmt.Errorf("update next run for schedule %d: %w", schedule.ID, updateErr)
+		}
+	}
+
+	return nil
+}
+
+// ForceRunAllSchedules executes all enabled schedules immediately regardless of
+// next_run_at, then computes the proper next_run_at from real current time to
+// avoid suppressing expected periodic cadence.
+func (s *ReportService) ForceRunAllSchedules(ctx context.Context) error {
+	schedules, err := s.ListSchedules(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, schedule := range schedules {
+		if !schedule.Enabled {
+			continue
+		}
+		start := time.Now().UTC()
+		runErr := s.runSchedule(ctx, schedule)
+		finish := time.Now().UTC()
+
+		status := "completed"
+		summary := map[string]any{"schedule_id": schedule.ID, "report_type": schedule.ReportType, "trigger": "manual_run_now"}
+		var rootCause string
+		if runErr != nil {
+			status = "failed"
+			summary["error"] = runErr.Error()
+			rootCause = runErr.Error()
+		}
+		if s.jobRuns != nil {
+			_ = s.jobRuns.Record(ctx, JobRunInput{JobType: "report_schedule", StartedAt: start, FinishedAt: finish, Status: status, Summary: summary, FailureRootCauseNotes: rootCause})
+		}
+
+		realNow := time.Now().UTC()
+		nextRun := realNow.Add(time.Duration(schedule.IntervalMinutes) * time.Minute)
+		if _, updateErr := s.db.ExecContext(ctx, `UPDATE report_schedules SET next_run_at = ?, updated_at = ? WHERE id = ?`, nextRun.Unix(), realNow.Unix(), schedule.ID); updateErr != nil {
 			return fmt.Errorf("update next run for schedule %d: %w", schedule.ID, updateErr)
 		}
 	}
@@ -394,6 +439,10 @@ type CreateConfigVersionInput struct {
 }
 
 func (s *ReportService) CreateConfigVersion(ctx context.Context, input CreateConfigVersionInput) (*domain.ConfigVersion, error) {
+	// Defense-in-depth: verify caller has config.manage permission at service layer
+	if err := RequireCallerPermission(ctx, domain.PermissionConfigManage); err != nil {
+		return nil, fmt.Errorf("%w: config.manage permission required", ErrForbidden)
+	}
 	key := strings.TrimSpace(input.ConfigKey)
 	if key == "" {
 		return nil, fmt.Errorf("%w: config_key is required", ErrValidation)
@@ -502,7 +551,8 @@ func (s *ReportService) RollbackConfigVersion(ctx context.Context, versionID int
 		createdBy sql.NullInt64
 		createdAt int64
 	)
-	err = tx.QueryRowContext(ctx, `SELECT id, config_key, config_payload_json, created_by, created_at FROM config_versions WHERE id = ?`, versionID).Scan(&item.ID, &item.ConfigKey, &item.ConfigPayloadJSON, &createdBy, &createdAt)
+	var currentVersion int64
+	err = tx.QueryRowContext(ctx, `SELECT id, config_key, config_payload_json, created_by, created_at, version FROM config_versions WHERE id = ?`, versionID).Scan(&item.ID, &item.ConfigKey, &item.ConfigPayloadJSON, &createdBy, &createdAt, &currentVersion)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("%w: config version not found", ErrNotFound)
@@ -515,9 +565,20 @@ func (s *ReportService) RollbackConfigVersion(ctx context.Context, versionID int
 		item.CreatedBy = &v
 	}
 
-	if _, err := tx.ExecContext(ctx, `UPDATE config_versions SET is_active = 0 WHERE config_key = ?`, item.ConfigKey); err != nil {
-		return nil, fmt.Errorf("deactivate config versions by key: %w", err)
+	// Use version predicate on deactivation to detect concurrent modification
+	deactivateResult, err := tx.ExecContext(ctx, `UPDATE config_versions SET is_active = 0, version = version + 1 WHERE config_key = ? AND id = ? AND version = ?`, item.ConfigKey, versionID, currentVersion)
+	if err != nil {
+		return nil, fmt.Errorf("deactivate config version: %w", err)
 	}
+	affected, _ := deactivateResult.RowsAffected()
+	if affected == 0 {
+		return nil, fmt.Errorf("%w: config version was modified by another user", ErrVersionConflict)
+	}
+	// Deactivate other versions of the same key (no version predicate needed — we own the tx)
+	if _, err := tx.ExecContext(ctx, `UPDATE config_versions SET is_active = 0 WHERE config_key = ? AND id != ?`, item.ConfigKey, versionID); err != nil {
+		return nil, fmt.Errorf("deactivate other config versions: %w", err)
+	}
+	// Activate the target version
 	if _, err := tx.ExecContext(ctx, `UPDATE config_versions SET is_active = 1 WHERE id = ?`, versionID); err != nil {
 		return nil, fmt.Errorf("activate rollback config version: %w", err)
 	}

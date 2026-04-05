@@ -19,6 +19,7 @@ var (
 	ErrNotFound            = errors.New("service: not found")
 	ErrSchedulingConflict  = errors.New("service: scheduling conflict")
 	ErrIdempotencyConflict = errors.New("service: idempotency conflict")
+	ErrForbidden           = errors.New("service: forbidden")
 )
 
 type AdmissionsService struct {

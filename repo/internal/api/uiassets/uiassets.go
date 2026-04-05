@@ -2,5 +2,5 @@ package uiassets
 
 import "embed"
 
-//go:embed index.html assets/*
+//go:embed assets/*
 var Files embed.FS

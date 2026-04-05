@@ -60,7 +60,11 @@ type OpsSummary struct {
 	PaymentsTodayNetCents int64     `json:"payments_today_net_cents"`
 	FailedPaymentsToday   int64     `json:"failed_payments_today"`
 	UpcomingExams48h      int64     `json:"upcoming_exams_48h"`
+	ExecutionRate         float64   `json:"execution_rate"`
 	OnTimePct             float64   `json:"on_time_pct"`
+	CheckpointCount       int64     `json:"checkpoint_count"`
+	AlertOpenCount        int64     `json:"alert_open_count"`
+	AlertHighCount        int64     `json:"alert_high_count"`
 }
 
 func (s *ReportService) OpsSummary(ctx context.Context) (*OpsSummary, error) {
@@ -74,13 +78,13 @@ func (s *ReportService) OpsSummary(ctx context.Context) (*OpsSummary, error) {
 
 	summary := &OpsSummary{GeneratedAt: now}
 
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM admissions WHERE status = 'admitted'`).Scan(&summary.ActiveAdmissions); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM admissions WHERE status = 'active'`).Scan(&summary.ActiveAdmissions); err != nil {
 		return nil, fmt.Errorf("query active admissions: %w", err)
 	}
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM beds WHERE status = 'occupied'`).Scan(&summary.OccupiedBeds); err != nil {
 		return nil, fmt.Errorf("query occupied beds: %w", err)
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM work_orders WHERE status IN ('open','in_progress')`).Scan(&summary.OpenWorkOrders); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM work_orders WHERE status IN ('queued','in_progress')`).Scan(&summary.OpenWorkOrders); err != nil {
 		return nil, fmt.Errorf("query open work orders: %w", err)
 	}
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM payments WHERE received_at >= ?`, dayStart.Unix()).Scan(&summary.PaymentsTodayCount); err != nil {
@@ -96,15 +100,31 @@ func (s *ReportService) OpsSummary(ctx context.Context) (*OpsSummary, error) {
 		return nil, fmt.Errorf("query upcoming exams: %w", err)
 	}
 
-	var completedCount, onTimeCount int64
+	var totalCount, completedCount, onTimeCount int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM work_orders`).Scan(&totalCount); err != nil {
+		return nil, fmt.Errorf("query total work orders: %w", err)
+	}
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM work_orders WHERE status = 'completed'`).Scan(&completedCount); err != nil {
 		return nil, fmt.Errorf("query completed work orders: %w", err)
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM work_orders WHERE status = 'completed' AND started_at <= (scheduled_start + 900)`).Scan(&onTimeCount); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM work_orders WHERE status = 'completed' AND scheduled_start IS NOT NULL AND (completed_at - scheduled_start) <= 900`).Scan(&onTimeCount); err != nil {
 		return nil, fmt.Errorf("query on-time work orders: %w", err)
+	}
+	if totalCount > 0 {
+		summary.ExecutionRate = float64(completedCount) * 100 / float64(totalCount)
 	}
 	if completedCount > 0 {
 		summary.OnTimePct = float64(onTimeCount) * 100 / float64(completedCount)
+	}
+
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM care_quality_checkpoints`).Scan(&summary.CheckpointCount); err != nil {
+		return nil, fmt.Errorf("query care checkpoints: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM alert_events WHERE state = 'open'`).Scan(&summary.AlertOpenCount); err != nil {
+		return nil, fmt.Errorf("query open alerts: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM alert_events WHERE severity IN ('high', 'critical') AND state = 'open'`).Scan(&summary.AlertHighCount); err != nil {
+		return nil, fmt.Errorf("query high alerts: %w", err)
 	}
 
 	return summary, nil

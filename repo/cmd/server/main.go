@@ -10,6 +10,7 @@ import (
 
 	"clinic-admin-suite/internal/api"
 	"clinic-admin-suite/internal/config"
+	"clinic-admin-suite/internal/domain"
 	"clinic-admin-suite/internal/repository/migrations"
 	"clinic-admin-suite/internal/repository/sqlite"
 	"clinic-admin-suite/internal/service"
@@ -100,7 +101,13 @@ func main() {
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	app.Use(recover.New())
 
-	runnerCtx, runnerCancel := context.WithCancel(context.Background())
+	// Background runner context with system-level role for defense-in-depth checks
+	bgCtx := service.WithAuditContext(context.Background(), service.AuditContext{
+		OperatorUsername: "system",
+		OperatorRole:     string(domain.RoleAdmin),
+		RequestID:        "background",
+	})
+	runnerCtx, runnerCancel := context.WithCancel(bgCtx)
 	defer runnerCancel()
 
 	go kpiService.StartHourlyRollupTicker(runnerCtx)

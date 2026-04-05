@@ -38,6 +38,7 @@ type ExamSessionDraft struct {
 	Conflicts         []ScheduleConflict `json:"conflicts,omitempty"`
 	PublishedSchedule *int64             `json:"published_schedule_id,omitempty"`
 	CreatedBy         *int64             `json:"created_by,omitempty"`
+	Version           int64              `json:"version"`
 	CreatedAt         time.Time          `json:"created_at"`
 	UpdatedAt         time.Time          `json:"updated_at"`
 }

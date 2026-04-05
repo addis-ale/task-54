@@ -28,9 +28,11 @@ func NewWorkOrderService(db *sql.DB, workOrders repository.WorkOrderRepository, 
 }
 
 type QueueWorkOrderInput struct {
-	ServiceType string
-	Priority    string
-	AssigneeID  *int64
+	ServiceType    string
+	Priority       string
+	AssigneeID     *int64
+	PatientID      *int64
+	ScheduledStart *time.Time
 }
 
 type StartWorkOrderInput struct {
@@ -74,10 +76,12 @@ func (s *WorkOrderService) Queue(ctx context.Context, input QueueWorkOrderInput)
 	}
 
 	workOrder := &domain.WorkOrder{
-		ServiceType: serviceType,
-		Priority:    priority,
-		Status:      domain.WorkOrderStatusQueued,
-		AssigneeID:  input.AssigneeID,
+		ServiceType:    serviceType,
+		Priority:       priority,
+		ScheduledStart: input.ScheduledStart,
+		Status:         domain.WorkOrderStatusQueued,
+		AssigneeID:     input.AssigneeID,
+		PatientID:      input.PatientID,
 	}
 
 	if err := s.workOrders.Create(ctx, workOrder); err != nil {
@@ -166,11 +170,18 @@ func (s *WorkOrderService) Complete(ctx context.Context, input CompleteWorkOrder
 		return nil, fmt.Errorf("%w: work order version mismatch", ErrVersionConflict)
 	}
 
-	latencySeconds := int64(now.Sub(*current.StartedAt).Seconds())
-	if latencySeconds < 0 {
-		latencySeconds = 0
+	// On-time means completed within 15 minutes (900 seconds) of the scheduled start.
+	// If no scheduled_start is set, the work order is not evaluated for timeliness
+	// (consistent with KPI/report SQL which requires scheduled_start IS NOT NULL).
+	var latencySeconds int64
+	var onTime15m bool
+	if current.ScheduledStart != nil {
+		latencySeconds = int64(now.Sub(*current.ScheduledStart).Seconds())
+		if latencySeconds < 0 {
+			latencySeconds = 0
+		}
+		onTime15m = latencySeconds <= 900
 	}
-	onTime15m := latencySeconds <= 900
 
 	if err := s.jobRuns.RecordTx(ctx, tx, JobRunInput{
 		JobType:    "work_order_completion",

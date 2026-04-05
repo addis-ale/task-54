@@ -87,6 +87,10 @@ type RunSettlementResult struct {
 }
 
 func (s *SettlementService) RunShift(ctx context.Context, input RunSettlementInput) (*RunSettlementResult, error) {
+	// Defense-in-depth: verify caller has settlements.run permission at service layer
+	if err := RequireCallerPermission(ctx, domain.PermissionSettlementsRun); err != nil {
+		return nil, fmt.Errorf("%w: settlements.run permission required", ErrForbidden)
+	}
 	if !s.adminOverrideSettlement && !isWithinShiftCloseWindow(time.Now().UTC(), s.settlementWindowMins) {
 		return nil, ErrOutsideSettlementWindow
 	}

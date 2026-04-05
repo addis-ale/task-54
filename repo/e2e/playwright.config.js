@@ -1,8 +1,6 @@
 // @ts-check
 const { defineConfig } = require("@playwright/test");
-const chromiumPath =
-  process.env.PW_CHROMIUM_EXECUTABLE ||
-  "C:/Users/PC/AppData/Local/ms-playwright/chromium-1217/chrome-win64/chrome.exe";
+const chromiumPath = process.env.PW_CHROMIUM_EXECUTABLE || undefined;
 
 module.exports = defineConfig({
   testDir: "./tests",
@@ -10,10 +8,10 @@ module.exports = defineConfig({
   use: {
     baseURL: "http://127.0.0.1:8080",
     trace: "on-first-retry",
-    launchOptions: {
-      executablePath: chromiumPath,
-      args: ["--headless=new"],
-    },
+    launchOptions: Object.assign(
+      { args: ["--headless=new"] },
+      chromiumPath ? { executablePath: chromiumPath } : {}
+    ),
   },
   webServer: {
     command: "go run ./cmd/server",

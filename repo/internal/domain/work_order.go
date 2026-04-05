@@ -16,15 +16,17 @@ const (
 )
 
 type WorkOrder struct {
-	ID          int64      `json:"id"`
-	ServiceType string     `json:"service_type"`
-	Priority    string     `json:"priority"`
-	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	Status      string     `json:"status"`
-	AssigneeID  *int64     `json:"assignee_id,omitempty"`
-	Version     int64      `json:"version"`
+	ID             int64      `json:"id"`
+	ServiceType    string     `json:"service_type"`
+	Priority       string     `json:"priority"`
+	ScheduledStart *time.Time `json:"scheduled_start,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	CompletedAt    *time.Time `json:"completed_at,omitempty"`
+	Status         string     `json:"status"`
+	AssigneeID     *int64     `json:"assignee_id,omitempty"`
+	PatientID      *int64     `json:"patient_id,omitempty"`
+	Version        int64      `json:"version"`
 }
 
 func IsValidWorkOrderStatus(status string) bool {
