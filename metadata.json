@@ -1,0 +1,9 @@
+{
+  "project_name": "CareOps Clinic Administration Suite",
+  "project_type": "Fullstack",
+  "frontend_language": "HTML/JavaScript",
+  "backend_language": "Go",
+  "frontend_framework": "HTMX",
+  "backend_framework": "Fiber",
+  "database": "SQLite"
+}

@@ -1,0 +1,765 @@
+package handler
+
+import (
+	"bytes"
+	"fmt"
+	htmltpl "html/template"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"clinic-admin-suite/internal/api/middleware"
+	"clinic-admin-suite/internal/api/templates"
+	"clinic-admin-suite/internal/config"
+	"clinic-admin-suite/internal/domain"
+	"clinic-admin-suite/internal/repository"
+	"clinic-admin-suite/internal/service"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+var templateFuncs = htmltpl.FuncMap{
+	"deref": func(v *int64) int64 {
+		if v == nil {
+			return 0
+		}
+		return *v
+	},
+}
+
+var parsedTemplates = htmltpl.Must(htmltpl.New("").Funcs(templateFuncs).ParseFS(templates.Files, "*.gohtml"))
+
+func renderTemplate(name string, data any) (string, error) {
+	var buf bytes.Buffer
+	if err := parsedTemplates.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+type AppPagesHandler struct {
+	config      config.Config
+	auth        *service.AuthService
+	admissions  *service.AdmissionsService
+	exercises   *service.ExerciseService
+	favorites   *service.ExerciseFavoriteService
+	care        *service.CareService
+	templates   *service.ExamTemplateService
+	payments    *service.PaymentService
+	settlements *service.SettlementService
+	reports     *service.ReportService
+	workOrders  *service.WorkOrderService
+}
+
+func NewAppPagesHandler(cfg config.Config, auth *service.AuthService, admissions *service.AdmissionsService, exercises *service.ExerciseService, favorites *service.ExerciseFavoriteService, care *service.CareService, templates *service.ExamTemplateService, payments *service.PaymentService, settlements *service.SettlementService, reports *service.ReportService, workOrders *service.WorkOrderService) *AppPagesHandler {
+	return &AppPagesHandler{
+		config:      cfg,
+		auth:        auth,
+		admissions:  admissions,
+		exercises:   exercises,
+		favorites:   favorites,
+		care:        care,
+		templates:   templates,
+		payments:    payments,
+		settlements: settlements,
+		reports:     reports,
+		workOrders:  workOrders,
+	}
+}
+
+func (h *AppPagesHandler) LoginPage(c *fiber.Ctx) error {
+	c.Type("html", "utf-8")
+	result, err := renderTemplate("login.gohtml", struct{ CSRFToken string }{CSRFToken: middleware.CSRFToken(c)})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) LoginSubmit(c *fiber.Ctx) error {
+	username := strings.TrimSpace(c.FormValue("username"))
+	password := c.FormValue("password")
+	result, err := h.auth.Login(c.UserContext(), service.LoginInput{
+		Username:  username,
+		Password:  password,
+		RequestID: c.Get("X-Request-ID"),
+		IP:        c.IP(),
+		UserAgent: c.Get("User-Agent"),
+	})
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).SendString("invalid credentials")
+	}
+
+	c.Cookie(&fiber.Cookie{Name: h.config.SessionCookieName, Value: result.Token, Path: "/", Expires: result.ExpiresAt, HTTPOnly: true, Secure: h.config.CookieSecure, SameSite: "Strict"})
+	return c.Redirect("/app", fiber.StatusSeeOther)
+}
+
+func (h *AppPagesHandler) Logout(c *fiber.Ctx) error {
+	rawToken := strings.TrimSpace(c.Cookies(h.config.SessionCookieName))
+	if rawToken != "" {
+		_ = h.auth.Logout(c.UserContext(), rawToken)
+	}
+	c.Cookie(&fiber.Cookie{Name: h.config.SessionCookieName, Value: "", Path: "/", Expires: time.Unix(0, 0), HTTPOnly: true, Secure: h.config.CookieSecure, SameSite: "Strict"})
+	return c.Redirect("/login", fiber.StatusSeeOther)
+}
+
+func (h *AppPagesHandler) AppShell(c *fiber.Ctx) error {
+	rawToken := strings.TrimSpace(c.Cookies(h.config.SessionCookieName))
+	if rawToken == "" {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
+	user, _, err := h.auth.AuthenticateToken(c.UserContext(), rawToken)
+	if err != nil || user == nil {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
+	username := user.Username
+
+	result, err2 := renderTemplate("appshell.gohtml", struct{ Username string }{Username: username})
+	if err2 != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	c.Type("html", "utf-8")
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) PanelOverview(c *fiber.Ctx) error {
+	ops, _ := h.reports.OpsSummary(c.UserContext())
+	careSummary, _ := h.care.Dashboard(c.UserContext())
+	if ops == nil {
+		ops = &service.OpsSummary{}
+	}
+	if careSummary == nil {
+		careSummary = &domain.CareDashboardSummary{}
+	}
+
+	result, err := renderTemplate("panel_overview.gohtml", struct {
+		Ops  *service.OpsSummary
+		Care *domain.CareDashboardSummary
+	}{Ops: ops, Care: careSummary})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) PanelOccupancy(c *fiber.Ctx) error {
+	items, err := h.admissions.OccupancyBoard(c.UserContext())
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("<div class='card'>Failed to load occupancy board</div>")
+	}
+	wards, _ := h.admissions.ListWards(c.UserContext())
+	patients, _ := h.admissions.ListPatients(c.UserContext())
+	beds, _ := h.admissions.ListBeds(c.UserContext(), repository.BedFilter{})
+	result, err := renderTemplate("panel_occupancy.gohtml", struct {
+		Items    []domain.BedOccupancy
+		Wards    []domain.Ward
+		Patients []domain.Patient
+		Beds     []domain.Bed
+	}{Items: items, Wards: wards, Patients: patients, Beds: beds})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreateWard(c *fiber.Ctx) error {
+	_, err := h.admissions.CreateWard(c.UserContext(), service.CreateWardInput{Name: strings.TrimSpace(c.FormValue("name"))})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelOccupancy(c)
+}
+
+func (h *AppPagesHandler) CreatePatient(c *fiber.Ctx) error {
+	_, err := h.admissions.CreatePatient(c.UserContext(), service.CreatePatientInput{MRN: strings.TrimSpace(c.FormValue("mrn")), Name: strings.TrimSpace(c.FormValue("name"))})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelOccupancy(c)
+}
+
+func (h *AppPagesHandler) CreateBed(c *fiber.Ctx) error {
+	wardID, _ := strconv.ParseInt(c.FormValue("ward_id"), 10, 64)
+	_, err := h.admissions.CreateBed(c.UserContext(), service.CreateBedInput{WardID: wardID, BedCode: strings.TrimSpace(c.FormValue("bed_code"))})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelOccupancy(c)
+}
+
+func (h *AppPagesHandler) CreateAdmission(c *fiber.Ctx) error {
+	patientID, _ := strconv.ParseInt(c.FormValue("patient_id"), 10, 64)
+	bedID, _ := strconv.ParseInt(c.FormValue("bed_id"), 10, 64)
+	_, err := h.admissions.AssignAdmission(c.UserContext(), service.AssignAdmissionInput{PatientID: patientID, BedID: bedID, ActorID: currentActorIDFromContext(c)})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelOccupancy(c)
+}
+
+type exerciseView struct {
+	ID                int64
+	Title             string
+	Difficulty        string
+	CoachingPoints    string
+	BodyRegions       string
+	Contraindications string
+	MediaCount        int
+	Favored           bool
+}
+
+func (h *AppPagesHandler) PanelExercises(c *fiber.Ctx) error {
+	authCtx, _ := middleware.CurrentAuth(c)
+	q := strings.TrimSpace(c.Query("q"))
+	difficulty := strings.TrimSpace(c.Query("difficulty"))
+	tags := strings.TrimSpace(c.Query("tags"))
+	equipment := strings.TrimSpace(c.Query("equipment"))
+	bodyRegion := strings.TrimSpace(c.Query("body_region"))
+	contraindications := strings.TrimSpace(c.Query("contraindications"))
+	coachingPoints := strings.TrimSpace(c.Query("coaching_points"))
+
+	filter := repository.ExerciseFilter{
+		Query:             q,
+		Difficulty:        difficulty,
+		Tags:              splitCSV(tags),
+		Equipment:         splitCSV(equipment),
+		BodyRegions:       splitCSV(bodyRegion),
+		Contraindications: splitCSV(contraindications),
+		CoachingPoints:    splitCSV(coachingPoints),
+	}
+	activeFilter := q != "" || difficulty != "" || tags != "" || equipment != "" || bodyRegion != "" || contraindications != "" || coachingPoints != ""
+
+	items, err := h.exercises.List(c.UserContext(), filter)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("<div class='card'>Failed to load exercises</div>")
+	}
+	favorites := map[int64]struct{}{}
+	if authCtx != nil && authCtx.User != nil {
+		favorites, _ = h.favorites.ListIDs(c.UserContext(), authCtx.User.ID)
+	}
+	views := make([]exerciseView, len(items))
+	for i, item := range items {
+		_, favored := favorites[item.ID]
+		var bodyRegionStrs, contraStrs []string
+		for _, br := range item.BodyRegions {
+			bodyRegionStrs = append(bodyRegionStrs, br.Name)
+		}
+		for _, ci := range item.Contraindications {
+			contraStrs = append(contraStrs, ci.Label)
+		}
+		views[i] = exerciseView{
+			ID:                item.ID,
+			Title:             item.Title,
+			Difficulty:        item.Difficulty,
+			CoachingPoints:    item.CoachingPoints,
+			BodyRegions:       strings.Join(bodyRegionStrs, ", "),
+			Contraindications: strings.Join(contraStrs, ", "),
+			MediaCount:        len(item.MediaAssets),
+			Favored:           favored,
+		}
+	}
+	result, err := renderTemplate("panel_exercises.gohtml", struct {
+		Items             []exerciseView
+		Query             string
+		Difficulty        string
+		Tags              string
+		Equipment         string
+		BodyRegion        string
+		Contraindications string
+		CoachingPoints    string
+		ActiveFilter      bool
+	}{Items: views, Query: q, Difficulty: difficulty, Tags: tags, Equipment: equipment, BodyRegion: bodyRegion, Contraindications: contraindications, CoachingPoints: coachingPoints, ActiveFilter: activeFilter})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreateExercise(c *fiber.Ctx) error {
+	_, err := h.exercises.Create(c.UserContext(), service.CreateExerciseInput{
+		Title:             strings.TrimSpace(c.FormValue("title")),
+		Difficulty:        strings.TrimSpace(c.FormValue("difficulty")),
+		Description:       strings.TrimSpace(c.FormValue("description")),
+		BodyRegions:       splitCSV(c.FormValue("body_region")),
+		Contraindications: splitCSV(c.FormValue("contraindications")),
+		CoachingPoints:    strings.TrimSpace(c.FormValue("coaching_points")),
+	})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelExercises(c)
+}
+
+func (h *AppPagesHandler) ToggleFavorite(c *fiber.Ctx) error {
+	authCtx, ok := middleware.CurrentAuth(c)
+	if !ok || authCtx.User == nil {
+		return c.Status(fiber.StatusUnauthorized).SendString("authentication required")
+	}
+	exerciseID, err := strconv.ParseInt(c.Params("exercise_id"), 10, 64)
+	if err != nil || exerciseID <= 0 {
+		return handleUIError(c, fmt.Errorf("%w: exercise_id must be a positive integer", service.ErrValidation))
+	}
+	_, err = h.favorites.Toggle(c.UserContext(), authCtx.User.ID, exerciseID)
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelExercises(c)
+}
+
+func (h *AppPagesHandler) ExerciseDetail(c *fiber.Ctx) error {
+	exerciseID, err := strconv.ParseInt(c.Params("exercise_id"), 10, 64)
+	if err != nil || exerciseID <= 0 {
+		return handleUIError(c, fmt.Errorf("%w: exercise_id must be a positive integer", service.ErrValidation))
+	}
+	exercise, err := h.exercises.GetByID(c.UserContext(), exerciseID)
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	favored := false
+	authCtx, ok := middleware.CurrentAuth(c)
+	if ok && authCtx.User != nil {
+		favored, _ = h.favorites.IsFavorite(c.UserContext(), authCtx.User.ID, exerciseID)
+	}
+	type mediaView struct {
+		ID           int64
+		MediaType    string
+		OriginalName string
+		SizeBytes    int64
+		Checksum     string
+	}
+	media := make([]mediaView, 0, len(exercise.MediaAssets))
+	for _, m := range exercise.MediaAssets {
+		media = append(media, mediaView{
+			ID:           m.ID,
+			MediaType:    m.MediaType,
+			OriginalName: m.Variant,
+			SizeBytes:    m.Bytes,
+			Checksum:     m.ChecksumSHA256,
+		})
+	}
+	result, err := renderTemplate("panel_exercise_detail.gohtml", struct {
+		Exercise          *domain.Exercise
+		Favored           bool
+		BodyRegions       []domain.BodyRegion
+		Contraindications []domain.Contraindication
+		Media             []mediaView
+	}{Exercise: exercise, Favored: favored, BodyRegions: exercise.BodyRegions, Contraindications: exercise.Contraindications, Media: media})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	c.Type("html", "utf-8")
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) PanelCare(c *fiber.Ctx) error {
+	checkpoints, _ := h.care.ListCheckpoints(c.UserContext(), service.CareCheckpointFilter{})
+	alerts, _ := h.care.ListAlerts(c.UserContext(), service.AlertEventFilter{})
+	patients, _ := h.admissions.ListPatients(c.UserContext())
+	result, err := renderTemplate("panel_care.gohtml", struct {
+		Checkpoints []domain.CareQualityCheckpoint
+		Alerts      []domain.AlertEvent
+		Patients    []domain.Patient
+	}{Checkpoints: checkpoints, Alerts: alerts, Patients: patients})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreateCheckpoint(c *fiber.Ctx) error {
+	residentID, _ := strconv.ParseInt(strings.TrimSpace(c.FormValue("resident_id")), 10, 64)
+	_, err := h.care.CreateCheckpoint(c.UserContext(), service.CreateCheckpointInput{
+		ResidentID:     residentID,
+		CheckpointType: c.FormValue("checkpoint_type"),
+		Status:         c.FormValue("status"),
+		Notes:          c.FormValue("notes"),
+		ActorID:        currentActorIDFromContext(c),
+		RequestID:      c.Get("X-Request-ID"),
+	})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelCare(c)
+}
+
+func (h *AppPagesHandler) CreateAlert(c *fiber.Ctx) error {
+	residentID, _ := strconv.ParseInt(strings.TrimSpace(c.FormValue("resident_id")), 10, 64)
+	_, err := h.care.CreateAlert(c.UserContext(), service.CreateAlertInput{
+		ResidentID: residentID,
+		AlertType:  c.FormValue("alert_type"),
+		Severity:   c.FormValue("severity"),
+		State:      c.FormValue("state"),
+		Message:    c.FormValue("message"),
+		ActorID:    currentActorIDFromContext(c),
+		RequestID:  c.Get("X-Request-ID"),
+	})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelCare(c)
+}
+
+type timelineBlock struct {
+	DraftID  int64
+	StartISO string
+	EndISO   string
+	Left     int
+	Width    int
+}
+
+func (h *AppPagesHandler) PanelScheduling(c *fiber.Ctx) error {
+	tmpls, _ := h.templates.ListTemplates(c.UserContext())
+	drafts, _ := h.templates.ListDrafts(c.UserContext(), nil)
+
+	sort.Slice(drafts, func(i, j int) bool { return drafts[i].CreatedAt.After(drafts[j].CreatedAt) })
+
+	var blocks []timelineBlock
+	var minTime, maxTime, minTimeISO string
+	gridWidth := 900
+	var rangeMs int
+
+	if len(drafts) > 0 {
+		var minT, maxT time.Time
+		for i, item := range drafts {
+			if i == 0 || item.StartAt.Before(minT) {
+				minT = item.StartAt
+			}
+			if i == 0 || item.EndAt.After(maxT) {
+				maxT = item.EndAt
+			}
+		}
+		rangeMinutes := maxT.Sub(minT).Minutes()
+		if rangeMinutes < 60 {
+			rangeMinutes = 60
+		}
+		rangeMs = int(rangeMinutes * 60 * 1000)
+		minTime = minT.Format("15:04")
+		maxTime = maxT.Format("15:04")
+		minTimeISO = minT.Format(time.RFC3339)
+
+		for _, item := range drafts {
+			if item.Status == "published" {
+				continue
+			}
+			left := int((item.StartAt.Sub(minT).Minutes() / rangeMinutes) * float64(gridWidth))
+			width := int((item.EndAt.Sub(item.StartAt).Minutes() / rangeMinutes) * float64(gridWidth))
+			if width < 40 {
+				width = 40
+			}
+			blocks = append(blocks, timelineBlock{
+				DraftID:  item.ID,
+				StartISO: item.StartAt.Format(time.RFC3339),
+				EndISO:   item.EndAt.Format(time.RFC3339),
+				Left:     left,
+				Width:    width,
+			})
+		}
+	}
+
+	result, err := renderTemplate("panel_scheduling.gohtml", struct {
+		Templates      []domain.ExamTemplate
+		Drafts         []domain.ExamSessionDraft
+		TimelineBlocks []timelineBlock
+		MinTime        string
+		MaxTime        string
+		MinTimeISO     string
+		GridWidth      int
+		RangeMs        int
+	}{
+		Templates:      tmpls,
+		Drafts:         drafts,
+		TimelineBlocks: blocks,
+		MinTime:        minTime,
+		MaxTime:        maxTime,
+		MinTimeISO:     minTimeISO,
+		GridWidth:      gridWidth,
+		RangeMs:        rangeMs,
+	})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreateTemplate(c *fiber.Ctx) error {
+	roomID, _ := strconv.ParseInt(c.FormValue("room_id"), 10, 64)
+	proctorID, _ := strconv.ParseInt(c.FormValue("proctor_id"), 10, 64)
+	duration, _ := strconv.Atoi(c.FormValue("duration_minutes"))
+	startAt := parseDateTimeInput(c.FormValue("window_start_at"))
+	endAt := parseDateTimeInput(c.FormValue("window_end_at"))
+
+	_, err := h.templates.CreateTemplate(c.UserContext(), service.CreateTemplateInput{
+		Title:           c.FormValue("title"),
+		Subject:         c.FormValue("subject"),
+		DurationMinutes: duration,
+		RoomID:          roomID,
+		ProctorID:       proctorID,
+		CandidateIDs:    parseIDCSV(c.FormValue("candidate_ids")),
+		WindowLabel:     c.FormValue("window_label"),
+		WindowStartAt:   startAt,
+		WindowEndAt:     endAt,
+		ActorID:         currentActorIDFromContext(c),
+		RequestID:       c.Get("X-Request-ID"),
+	})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelScheduling(c)
+}
+
+func (h *AppPagesHandler) GenerateDraft(c *fiber.Ctx) error {
+	templateID, _ := strconv.ParseInt(c.FormValue("template_id"), 10, 64)
+	windowID, _ := strconv.ParseInt(c.FormValue("window_id"), 10, 64)
+	var startAt *time.Time
+	if strings.TrimSpace(c.FormValue("start_at")) != "" {
+		parsed := parseDateTimeInput(c.FormValue("start_at"))
+		if !parsed.IsZero() {
+			startAt = &parsed
+		}
+	}
+	_, err := h.templates.GenerateDraft(c.UserContext(), service.GenerateDraftInput{TemplateID: templateID, WindowID: windowID, StartAt: startAt, ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelScheduling(c)
+}
+
+func (h *AppPagesHandler) AdjustDraft(c *fiber.Ctx) error {
+	draftID, _ := strconv.ParseInt(c.Params("draft_id"), 10, 64)
+	startAt := parseDateTimeInput(c.FormValue("start_at"))
+	endAt := parseDateTimeInput(c.FormValue("end_at"))
+	_, err := h.templates.AdjustDraft(c.UserContext(), service.AdjustDraftInput{DraftID: draftID, StartAt: startAt, EndAt: endAt, ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelScheduling(c)
+}
+
+func (h *AppPagesHandler) PublishDraft(c *fiber.Ctx) error {
+	draftID, _ := strconv.ParseInt(c.Params("draft_id"), 10, 64)
+	actorID := currentActorIDFromContext(c)
+	if actorID == nil {
+		return c.Status(fiber.StatusUnauthorized).SendString("unauthorized")
+	}
+	_, err := h.templates.PublishDraft(c.UserContext(), service.PublishDraftInput{DraftID: draftID, ActorID: *actorID, IdempotencyKey: strings.TrimSpace(c.Get("Idempotency-Key")), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelScheduling(c)
+}
+
+func (h *AppPagesHandler) PanelFinance(c *fiber.Ctx) error {
+	payments, _ := h.payments.List(c.UserContext(), repository.PaymentFilter{})
+	if len(payments) > 20 {
+		payments = payments[:20]
+	}
+	result, err := renderTemplate("panel_finance.gohtml", struct {
+		Payments []domain.Payment
+	}{Payments: payments})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreatePayment(c *fiber.Ctx) error {
+	amount, _ := strconv.ParseInt(c.FormValue("amount_cents"), 10, 64)
+	_, err := h.payments.Create(c.UserContext(), service.CreatePaymentInput{Method: c.FormValue("method"), Gateway: c.FormValue("gateway"), AmountCents: amount, Currency: c.FormValue("currency"), ShiftID: c.FormValue("shift_id"), ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelFinance(c)
+}
+
+func (h *AppPagesHandler) RefundPayment(c *fiber.Ctx) error {
+	paymentID, _ := strconv.ParseInt(c.FormValue("payment_id"), 10, 64)
+	amount, _ := strconv.ParseInt(c.FormValue("amount_cents"), 10, 64)
+	_, err := h.payments.Refund(c.UserContext(), service.RefundPaymentInput{PaymentID: paymentID, AmountCents: amount, Reason: c.FormValue("reason"), ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelFinance(c)
+}
+
+func (h *AppPagesHandler) RunSettlement(c *fiber.Ctx) error {
+	actual, _ := strconv.ParseInt(c.FormValue("actual_total_cents"), 10, 64)
+	_, err := h.settlements.RunShift(c.UserContext(), service.RunSettlementInput{ShiftID: c.FormValue("shift_id"), ActualTotalCents: actual, ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelFinance(c)
+}
+
+func (h *AppPagesHandler) PanelReports(c *fiber.Ctx) error {
+	auditRows, _ := h.reports.SearchAudit(c.UserContext(), service.AuditSearchFilter{Limit: 30})
+	schedules, _ := h.reports.ListSchedules(c.UserContext())
+	configVersions, _ := h.reports.ListConfigVersions(c.UserContext(), "")
+
+	result, err := renderTemplate("panel_reports.gohtml", struct {
+		AuditRows      []domain.AuditTrailRecord
+		Schedules      []domain.ReportSchedule
+		ConfigVersions []domain.ConfigVersion
+		SharedRoot     string
+	}{AuditRows: auditRows, Schedules: schedules, ConfigVersions: configVersions, SharedRoot: h.config.ReportsSharedRoot})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) AuditResults(c *fiber.Ctx) error {
+	filter := service.AuditSearchFilter{Limit: 100}
+	if v, ok := parseOptionalInt64(c.Query("resident_id")); ok {
+		filter.ResidentID = &v
+	}
+	filter.RecordType = strings.TrimSpace(c.Query("record_type"))
+	if from, ok, _ := parseOptionalDateTime(c.Query("from")); ok {
+		filter.From = &from
+	}
+	if to, ok, _ := parseOptionalDateTime(c.Query("to")); ok {
+		filter.To = &to
+	}
+	items, err := h.reports.SearchAudit(c.UserContext(), filter)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("search failed")
+	}
+	result, err := renderTemplate("audit_results.gohtml", struct {
+		Items []domain.AuditTrailRecord
+	}{Items: items})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	return c.SendString(result)
+}
+
+func (h *AppPagesHandler) CreateReportSchedule(c *fiber.Ctx) error {
+	interval, _ := strconv.Atoi(strings.TrimSpace(c.FormValue("interval_minutes")))
+	firstRun := time.Now().UTC().Add(5 * time.Minute)
+	if v := strings.TrimSpace(c.FormValue("first_run_at")); v != "" {
+		if parsed, err := time.Parse(time.RFC3339, v); err == nil {
+			firstRun = parsed.UTC()
+		}
+	}
+	_, err := h.reports.CreateSchedule(c.UserContext(), service.CreateReportScheduleInput{ReportType: c.FormValue("report_type"), Format: c.FormValue("format"), SharedFolder: c.FormValue("shared_folder_path"), FiltersJSON: strings.TrimSpace(c.FormValue("filters_json")), IntervalMinutes: interval, FirstRunAt: firstRun, ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelReports(c)
+}
+
+func (h *AppPagesHandler) RunReportSchedulesNow(c *fiber.Ctx) error {
+	if err := h.reports.ForceRunAllSchedules(c.UserContext()); err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelReports(c)
+}
+
+func (h *AppPagesHandler) CreateConfigVersion(c *fiber.Ctx) error {
+	_, err := h.reports.CreateConfigVersion(c.UserContext(), service.CreateConfigVersionInput{ConfigKey: c.FormValue("config_key"), PayloadJSON: c.FormValue("payload_json"), ActorID: currentActorIDFromContext(c), RequestID: c.Get("X-Request-ID")})
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelReports(c)
+}
+
+func (h *AppPagesHandler) RollbackConfigVersion(c *fiber.Ctx) error {
+	versionID, _ := strconv.ParseInt(c.Params("version_id"), 10, 64)
+	_, err := h.reports.RollbackConfigVersion(c.UserContext(), versionID, currentActorIDFromContext(c), c.Get("X-Request-ID"))
+	if err != nil {
+		return handleUIError(c, err)
+	}
+	return h.PanelReports(c)
+}
+
+func (h *AppPagesHandler) ServiceDeliveryDrillDown(c *fiber.Ctx) error {
+	patientID, err := strconv.ParseInt(c.Params("patient_id"), 10, 64)
+	if err != nil || patientID <= 0 {
+		return handleUIError(c, fmt.Errorf("%w: patient_id must be a positive integer", service.ErrValidation))
+	}
+	checkpoints, _ := h.care.ListCheckpoints(c.UserContext(), service.CareCheckpointFilter{ResidentID: &patientID})
+	alerts, _ := h.care.ListAlerts(c.UserContext(), service.AlertEventFilter{ResidentID: &patientID})
+
+	// Compute resident-scoped KPIs from work orders linked to this patient
+	residentKPI := h.computeResidentKPI(c, patientID)
+
+	result, err := renderTemplate("panel_service_delivery.gohtml", struct {
+		PatientID      int64
+		ExecutionRate  float64
+		OnTimePct      float64
+		OpenWorkOrders int64
+		Checkpoints    []domain.CareQualityCheckpoint
+		Alerts         []domain.AlertEvent
+	}{PatientID: patientID, ExecutionRate: residentKPI.executionRate, OnTimePct: residentKPI.onTimePct, OpenWorkOrders: residentKPI.openWorkOrders, Checkpoints: checkpoints, Alerts: alerts})
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).SendString("template error")
+	}
+	c.Type("html", "utf-8")
+	return c.SendString(result)
+}
+
+type residentKPIResult struct {
+	executionRate  float64
+	onTimePct      float64
+	openWorkOrders int64
+}
+
+func (h *AppPagesHandler) computeResidentKPI(c *fiber.Ctx, patientID int64) residentKPIResult {
+	// Query work orders scoped to this resident via patient_id
+	allOrders, _ := h.workOrders.List(c.UserContext(), repository.WorkOrderFilter{})
+	var total, completed, onTime, open int64
+	for _, wo := range allOrders {
+		if wo.PatientID == nil || *wo.PatientID != patientID {
+			continue
+		}
+		total++
+		if wo.Status == domain.WorkOrderStatusCompleted {
+			completed++
+			if wo.ScheduledStart != nil && wo.CompletedAt != nil {
+				if wo.CompletedAt.Unix()-wo.ScheduledStart.Unix() <= 900 {
+					onTime++
+				}
+			}
+		}
+		if wo.Status == domain.WorkOrderStatusQueued || wo.Status == domain.WorkOrderStatusInProgress {
+			open++
+		}
+	}
+	var executionRate, onTimePct float64
+	if total > 0 {
+		executionRate = float64(completed) * 100 / float64(total)
+	}
+	if completed > 0 {
+		onTimePct = float64(onTime) * 100 / float64(completed)
+	}
+	return residentKPIResult{executionRate: executionRate, onTimePct: onTimePct, openWorkOrders: open}
+}
+
+func parseDateTimeInput(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.UTC()
+	}
+	if t, err := time.Parse("2006-01-02T15:04", raw); err == nil {
+		return t.UTC()
+	}
+	if t, err := time.Parse("2006-01-02T15:04:05", raw); err == nil {
+		return t.UTC()
+	}
+	return time.Time{}
+}
+
+func parseIDCSV(raw string) []int64 {
+	parts := strings.Split(raw, ",")
+	out := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		v, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && v > 0 {
+			out = append(out, v)
+		}
+	}
+	return out
+}
